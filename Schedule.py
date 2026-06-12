@@ -25,7 +25,7 @@ data = {
     "Evening": [
         "• 3x Pilotest Normal\n• 3x Pilotest Slalom\n• 1x LPJ Memory (Med)",
         "• 3x Test Mode Control\n• 1x Pilotest Normal\n(Baseline Calibration Check)",
-        "Operational Rest Window\nCrucial Recharge Period",
+        "Operational Rest Window\nDo Math/Physics if Bored",
         "• 3x Pilotest Normal\n• 3x Pilotest Slalom\n• 1x LPJ Multitasking (Hard)",
         "• 3x Pilotest Normal\n• 3x Pilotest Slalom\n• 1x LPJ Multitasking (Hard)",
         "• 3x Test Mode Control\n• 1x Pilotest Normal\n(Baseline Calibration Check)",
@@ -121,5 +121,4 @@ for idx, threshold in enumerate(thresholds):
 # Flush and save pristine image asset
 plt.tight_layout()
 plt.savefig('CompassPrepSchedule.png', dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
-plt.close()
 plt.close()
