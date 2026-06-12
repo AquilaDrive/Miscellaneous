@@ -7,7 +7,7 @@ data = {
     "Morning": [
         "• 3x Pilotest Inverted\n• 3x Pilotest Slalom\n• 1x Pilotest Orientation",
         "Full COMPASS Simulation\n\n(Math, Physics, English, and\nall core test modules)",
-        "• 2x Pilotest Slalom\n• 1x Pilotest Orientation",
+        "• 3x Pilotest Orientation",
         "• 3x Pilotest Inverted\n• 3x Pilotest Slalom\n• 1x Pilotest Orientation",
         "• 3x Pilotest Inverted\n• 3x Pilotest Slalom\n• 1x Pilotest Orientation",
         "Full COMPASS Simulation\n\n(Math, Physics, English, and\nall core test modules)",
@@ -16,7 +16,7 @@ data = {
     "Mid-Day": [
         "• 3x LPJ Normal (Med)\n• 3x Pilotest Slalom\n• 1x LPJ Multitasking (Hard)",
         "Full COMPASS Simulation\n\n(Continuation and\nPerformance Review)",
-        "• 1x LPJ Memory (Med)\n• 1x LPJ Multitasking (Hard)",
+        "• 3x LPJ Memory (Med)\n• 3x LPJ Multitasking (Hard)",
         "• 3x LPJ Inverted (Med)\n• 3x Pilotest Slalom\n• 1x LPJ Memory (Med)",
         "• 3x LPJ Normal (Med)\n• 3x Pilotest Slalom\n• 1x LPJ Memory (Med)",
         "Full COMPASS Simulation\n\n(Continuation and\nPerformance Review)",
@@ -121,4 +121,5 @@ for idx, threshold in enumerate(thresholds):
 # Flush and save pristine image asset
 plt.tight_layout()
 plt.savefig('CompassPrepSchedule.png', dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+plt.close()
 plt.close()
