@@ -5,9 +5,6 @@ from collections import defaultdict
 from matplotlib.lines import Line2D
 
 # Define data: (day, section, platform, control, values)
-# section: 'Compass', 'Slalom'
-# platforms: 'PT' (Pilotest) or 'LPJ' (LatestPilotJobs)
-# controls: 'normal' or 'inverted'
 raw_data = [
     # Jun 7
     (7, 'Compass', 'PT', 'normal', [83, 80, 86]),
@@ -56,7 +53,6 @@ def get_color(score):
     elif score < 92: return '#0085CA'
     else: return '#00386B'
 
-# Count total sessions per day for column spacing
 day_counts = defaultdict(int)
 for day, _, _, _, _ in raw_data:
     day_counts[day] += 1
@@ -76,7 +72,6 @@ for day, section, platform, control, values in raw_data:
     })
     current_day_idx[day] += 1
 
-# Groups for trendlines: (Section, Platform, Control)
 groups = defaultdict(list)
 
 fig, ax = plt.subplots(figsize=(16, 9), facecolor='black')
@@ -87,12 +82,11 @@ for pt in data_points:
     groups[key].append((pt['x'], pt['y']))
     color = get_color(pt['y'])
     
-    # Markers: PT=circle, LPJ=rhombus, Slalom=triangle
     if pt['section'] == 'Slalom':
         marker = '^'
     elif pt['platform'] == 'PT':
         marker = 'o'
-    else: # LPJ
+    else:
         marker = 'D'
     
     if pt['control'] == 'normal':
@@ -112,7 +106,6 @@ def compute_bezier(points, num_points=200):
         curve[:, 1] += basis * points[i][1]
     return curve
 
-# Trendline styles
 trend_styles = {
     ('Compass', 'PT', 'normal'): {'color': '#888888', 'ls': '-'},
     ('Compass', 'PT', 'inverted'): {'color': '#888888', 'ls': '--'},
@@ -128,7 +121,6 @@ for key, pts in groups.items():
         style = trend_styles.get(key, {'color': '#444444', 'ls': '-'})
         ax.plot(bezier_pts[:, 0], bezier_pts[:, 1], color=style['color'], linestyle=style['ls'], linewidth=2, alpha=0.7, zorder=3)
 
-# Formatting
 ax.set_xlim(7, 26.5)
 ax.set_ylim(50, 100)
 
@@ -147,12 +139,11 @@ ax.set_xticklabels([f"Jun {d}" for d in range(7, 27)], rotation=45, ha='right')
 ax.set_yticks(range(50, 101, 5))
 ax.set_yticklabels([f"{pct}%" for pct in range(50, 101, 5)])
 
-ax.set_title("COMPASS & SLALOM Prep Progress Log", color='#FFFFFF', fontsize=14, fontweight='bold', pad=20)
+ax.set_title("COMPASS Prep Progress Log", color='#FFFFFF', fontsize=14, fontweight='bold', pad=20)
 
-# Multi-column Legend
 legend_elements = [
-    Line2D([0], [0], marker='o', color='w', label='PT (Compass)', mfc='#888888', ms=10, ls='None'),
-    Line2D([0], [0], marker='D', color='w', label='LPJ (Compass)', mfc='#888888', ms=9, ls='None'),
+    Line2D([0], [0], marker='o', color='w', label='PT (Control)', mfc='#888888', ms=10, ls='None'),
+    Line2D([0], [0], marker='D', color='w', label='LPJ (Control)', mfc='#888888', ms=9, ls='None'),
     Line2D([0], [0], marker='^', color='w', label='Slalom', mfc='#888888', ms=10, ls='None'),
     Line2D([0], [0], marker='s', color='w', label='Normal (Filled)', mfc='#888888', ms=10, ls='None'),
     Line2D([0], [0], marker='s', color='w', label='Inverted (Empty)', mfc='black', mec='#888888', ms=10, ls='None'),
@@ -163,5 +154,5 @@ leg = ax.legend(handles=legend_elements, facecolor='black', edgecolor='#2A2A2A',
 for text in leg.get_texts(): text.set_color('#FFFFFF')
 
 plt.tight_layout()
-plt.savefig("compass_slalom_progress.png", dpi=300, facecolor='black')
-plt.show()
+plt.savefig("CompassProgress.png", dpi=300, facecolor='black')
+plt.close()
