@@ -83,13 +83,13 @@ raw_data = [
     (22, 'Compass', 'PT', 'normal', [94, 93, 94], 'evening'),
     (22, 'Slalom', 'PT', 'normal', [69, 70, 72], 'evening'),
 
-    # Jun 23 (User wrote Jul 23 for Slalom, clearly Jun 23)
+    # Jun 23
     (23, 'Compass', 'LPJ', 'normal', [80], 'morning'),
     (23, 'Slalom', 'PT', 'normal', [68], 'morning'),
     (23, 'Compass', 'LPJ', 'normal', [82, 82, 85], 'midday'),
     (23, 'Compass', 'PT', 'normal', [93], 'evening'),
 
-    # Jun 25 (User wrote Jul 25 for Slalom, clearly Jun 25)
+    # Jun 25
     (25, 'Compass', 'PT', 'inverted', [89, 92, 92], 'morning'),
     (25, 'Slalom', 'PT', 'normal', [65, 66, 69], 'morning'),
     (25, 'Compass', 'LPJ', 'inverted', [82.5], 'midday'),
@@ -124,7 +124,8 @@ for day, section, platform, control, values, time_slot in raw_data:
     
     data_points.append({
         'x': x_pos, 'y': avg, 'section': section,
-        'platform': platform, 'control': control, 'day': day, 'values': values
+        'platform': platform, 'control': control, 'day': day, 'values': values,
+        'time_slot': time_slot  # Fixed: Added missing key here
     })
 
 groups = defaultdict(list)
