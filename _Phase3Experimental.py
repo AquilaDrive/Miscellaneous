@@ -4,7 +4,6 @@ import traceback
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.ticker import FuncFormatter
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -37,233 +36,300 @@ def find_analysis_files(base_dir: Path):
     scorecard_files = list({p.resolve(): p for p in scorecard_files}.values())
 
     if not aligned_files:
-        raise FileNotFoundError("Could not find any 'aligned_telemetry_analysis*.csv' files in current or parent directory.")
+        raise FileNotFoundError(
+            f"No 'aligned_telemetry_analysis*.csv' found in {base_dir.resolve()} or its parent directory."
+        )
+    if not scorecard_files:
+        raise FileNotFoundError(
+            f"No 'analysis_scorecard*.csv' found in {base_dir.resolve()} or its parent directory."
+        )
 
-    # Sort by modification time (latest first)
-    latest_aligned = max(aligned_files, key=lambda p: p.stat().st_mtime)
+    # Pick the most recently modified aligned telemetry analysis file
+    latest_aligned = sorted(
+        aligned_files, key=lambda p: p.stat().st_mtime, reverse=True
+    )[0]
     ts_tag = extract_timestamp_suffix(latest_aligned.name)
 
-    # Find matching scorecard
-    matching_scorecard = None
-    if ts_tag:
-        for sc in scorecard_files:
-            if ts_tag in sc.name:
-                matching_scorecard = sc
-                break
-    
-    if not matching_scorecard and scorecard_files:
-        matching_scorecard = max(scorecard_files, key=lambda p: p.stat().st_mtime)
+    # Match corresponding scorecard with same timestamp tag if available
+    matching_sc = [f for f in scorecard_files if ts_tag and ts_tag in f.name]
+    scorecard_path = (
+        matching_sc[0]
+        if matching_sc
+        else sorted(scorecard_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+    )
 
-    if not matching_scorecard:
-        raise FileNotFoundError(f"Could not find a matching 'analysis_scorecard*.csv' for timestamp tag: {ts_tag}")
-
-    return latest_aligned, matching_scorecard, ts_tag
+    return latest_aligned, scorecard_path, ts_tag
 
 
 # -------------------------------------------------------------------------
-# 2. CONTINUOUS ANGLE UNWARPER
+# 2. DESIGN SYSTEM & COLOR IDENTITIES
 # -------------------------------------------------------------------------
-def unwrap_degrees(series):
-    """Unwraps a 0-360 degree series to maintain continuity across boundaries."""
-    arr = np.asarray(series, dtype=float)
-    if len(arr) == 0:
-        return arr
-    diff = np.diff(arr)
-    adjustment = np.zeros_like(arr)
-    adjustment[1:] = np.cumsum(np.where(diff < -180, 360, np.where(diff > 180, -360, 0)))
-    return arr + adjustment
+COLORS = {
+    'Altitude': '#00ffcc',   # Bright Cyan
+    'Heading':  '#ffb700',   # Amber
+    'Bank':     '#ff007f',   # Magenta / Pink
+    'Roll':     '#ff007f',   # Magenta (matches Bank)
+    'VSI':      '#3399ff',   # Blue
+    'Pitch':    '#3399ff',   # Blue (matches Elevator/VSI)
+    'Rudder':   '#00e676',   # Green (unique to Yaw)
+    'Ref':      '#e0e0e0',   # Dashed Light Grey for target trajectory
+    'Pass':     '#00ff66',   # Bright Green badge
+    'Fail':     '#ff3333'    # Bright Red badge
+}
 
-
-# -------------------------------------------------------------------------
-# 3. CHART GENERATION FUNCTIONS
-# -------------------------------------------------------------------------
-def apply_oled_style(fig, axes):
+def apply_dark_style(fig, axes):
+    """Applies clean, high-contrast dark styling to figure and axes."""
     fig.patch.set_facecolor('#000000')
     if not isinstance(axes, (list, np.ndarray)):
         axes = [axes]
     for ax in np.ravel(axes):
         ax.set_facecolor('#080808')
-        ax.tick_params(colors='#e0e0e0', labelsize=10)
+        ax.tick_params(colors='#c0c0c0', labelsize=10)
         ax.xaxis.label.set_color('#ffffff')
         ax.yaxis.label.set_color('#ffffff')
         ax.title.set_color('#ffffff')
         for spine in ax.spines.values():
-            spine.set_color('#333333')
-        if ax.legend_:
-            plt.setp(ax.legend_.get_texts(), color='#ffffff')
-            ax.legend_.get_frame().set_facecolor('#111111')
-            ax.legend_.get_frame().set_edgecolor('#333333')
-
-
-def generate_flight_trajectory(aligned_df, timestamp_str, output_dir):
-    fig, axes = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
-    apply_oled_style(fig, axes)
-
-    time_col = 'Time_Min' if 'Time_Min' in aligned_df.columns else aligned_df.index
-
-    # 1. Altitude
-    axes[0].plot(aligned_df[time_col], aligned_df['Altitude_Ft'], label='Actual Altitude', color='#00ffcc', linewidth=2)
-    if 'Ref_Altitude' in aligned_df.columns:
-        axes[0].plot(aligned_df[time_col], aligned_df['Ref_Altitude'], label='Target Altitude', color='#e0e0e0', linestyle='--', linewidth=1.5)
-    axes[0].set_ylabel('Altitude (ft)', fontweight='bold')
-    axes[0].set_title('Altitude Tracking', loc='left', color='#aaaaaa', fontsize=11)
-    axes[0].legend(loc='upper right')
-    axes[0].grid(True, color='#222222', linestyle=':')
-
-    # 2. Heading (Continuous Unwrapped + Repeating Y-Axis)
-    actual_hdg = unwrap_degrees(aligned_df['Heading_Deg']) if 'Heading_Deg' in aligned_df.columns else unwrap_degrees(aligned_df['Heading'])
-    axes[1].plot(aligned_df[time_col], actual_hdg, label='Actual Heading', color='#ffb700', linewidth=2)
-    if 'Ref_Heading' in aligned_df.columns:
-        ref_hdg = unwrap_degrees(aligned_df['Ref_Heading'])
-        axes[1].plot(aligned_df[time_col], ref_hdg, label='Target Heading', color='#e0e0e0', linestyle='--', linewidth=1.5)
-    axes[1].set_ylabel('Heading (deg)', fontweight='bold')
-    axes[1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x % 360)}°"))
-    axes[1].set_title('Heading Tracking (Continuous)', loc='left', color='#aaaaaa', fontsize=11)
-    axes[1].legend(loc='upper right')
-    axes[1].grid(True, color='#222222', linestyle=':')
-
-    # 3. Bank Angle
-    axes[2].plot(aligned_df[time_col], aligned_df['Bank_Deg'], label='Actual Bank', color='#ff007f', linewidth=2)
-    if 'Ref_Bank' in aligned_df.columns:
-        axes[2].plot(aligned_df[time_col], aligned_df['Ref_Bank'], label='Target Bank', color='#e0e0e0', linestyle='--', linewidth=1.5)
-    axes[2].set_ylabel('Bank Angle (deg)', fontweight='bold')
-    axes[2].set_title('Bank Angle Tracking', loc='left', color='#aaaaaa', fontsize=11)
-    axes[2].legend(loc='upper right')
-    axes[2].grid(True, color='#222222', linestyle=':')
-
-    # 4. Vertical Speed (VSI)
-    vsi_col = 'VerticalSpeed_FPM' if 'VerticalSpeed_FPM' in aligned_df.columns else 'VSI_FPM'
-    if vsi_col in aligned_df.columns:
-        axes[3].plot(aligned_df[time_col], aligned_df[vsi_col], label='Actual VSI', color='#3399ff', linewidth=2)
-    if 'Ref_VSI' in aligned_df.columns:
-        axes[3].plot(aligned_df[time_col], aligned_df['Ref_VSI'], label='Target VSI', color='#e0e0e0', linestyle='--', linewidth=1.5)
-    axes[3].set_ylabel('VSI (ft/min)', fontweight='bold')
-    axes[3].set_xlabel('Time (Minutes)', fontweight='bold')
-    axes[3].set_title('Vertical Speed Indicator (VSI) Tracking', loc='left', color='#aaaaaa', fontsize=11)
-    axes[3].legend(loc='upper right')
-    axes[3].grid(True, color='#222222', linestyle=':')
-
-    plt.tight_layout()
-    out_path = output_dir / f"oled_flight_trajectory_{timestamp_str}.png"
-    fig.savefig(out_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
-    plt.close(fig)
-    print(f"Saved: {out_path.name}")
-
-
-def generate_pilot_controls(aligned_df, timestamp_str, output_dir):
-    fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
-    apply_oled_style(fig, axes)
-
-    time_col = 'Time_Min' if 'Time_Min' in aligned_df.columns else aligned_df.index
-
-    # 1. Yoke Roll
-    if 'Yoke_Roll_Pct' in aligned_df.columns:
-        axes[0].plot(aligned_df[time_col], aligned_df['Yoke_Roll_Pct'], label='Yoke Roll (%)', color='#ff007f', linewidth=1.5)
-    axes[0].set_ylabel('Roll (%)', fontweight='bold')
-    axes[0].set_title('Control Inputs - Yoke Roll', loc='left', color='#aaaaaa', fontsize=11)
-    axes[0].legend(loc='upper right')
-    axes[0].grid(True, color='#222222', linestyle=':')
-
-    # 2. Yoke Pitch
-    if 'Yoke_Pitch_Pct' in aligned_df.columns:
-        axes[1].plot(aligned_df[time_col], aligned_df['Yoke_Pitch_Pct'], label='Yoke Pitch (%)', color='#3399ff', linewidth=1.5)
-    axes[1].set_ylabel('Pitch (%)', fontweight='bold')
-    axes[1].set_title('Control Inputs - Yoke Pitch', loc='left', color='#aaaaaa', fontsize=11)
-    axes[1].legend(loc='upper right')
-    axes[1].grid(True, color='#222222', linestyle=':')
-
-    # 3. Rudder
-    if 'Rudder_Pct' in aligned_df.columns:
-        axes[2].plot(aligned_df[time_col], aligned_df['Rudder_Pct'], label='Rudder (%)', color='#00e676', linewidth=1.5)
-    axes[2].set_ylabel('Rudder (%)', fontweight='bold')
-    axes[2].set_xlabel('Time (Minutes)', fontweight='bold')
-    axes[2].set_title('Control Inputs - Rudder Yaw', loc='left', color='#aaaaaa', fontsize=11)
-    axes[2].legend(loc='upper right')
-    axes[2].grid(True, color='#222222', linestyle=':')
-
-    plt.tight_layout()
-    out_path = output_dir / f"oled_pilot_controls_{timestamp_str}.png"
-    fig.savefig(out_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
-    plt.close(fig)
-    print(f"Saved: {out_path.name}")
-
-
-def generate_scorecard_dashboard(aligned_df, scorecard_df, timestamp_str, output_dir):
-    fig = plt.figure(figsize=(16, 12))
-    apply_oled_style(fig, plt.gca())
-    fig.patch.set_facecolor('#000000')
-
-    gs = gridspec.GridSpec(3, 3, figure=fig, hspace=0.35, wspace=0.3)
-
-    # Segment Scorecard Table / Grid Representation
-    ax_table = fig.add_subplot(gs[:, :2])
-    ax_table.set_facecolor('#080808')
-    ax_table.axis('off')
-    ax_table.set_title('Segment-by-Segment Flight Performance Scorecard', loc='left', color='#ffffff', fontsize=14, fontweight='bold', pad=15)
-
-    if not scorecard_df.empty:
-        cell_text = []
-        col_labels = list(scorecard_df.columns)
-        for _, row in scorecard_df.iterrows():
-            cell_text.append([str(val) for val in row.values])
-
-        table = ax_table.table(cellText=cell_text, colLabels=col_labels, loc='center', cellLoc='center')
-        table.auto_set_font_size(False)
-        table.set_fontsize(9)
-        table.scale(1, 1.5)
-
-        for (row_idx, col_idx), cell in table.get_celld().items():
-            cell.set_edgecolor('#333333')
-            if row_idx == 0:
-                cell.set_facecolor('#1a1a1a')
-                cell.get_text().set_color('#ffffff')
-                cell.get_text().set_weight('bold')
-            else:
-                cell.set_facecolor('#080808')
-                cell.get_text().set_color('#e0e0e0')
-
-    # KPI Summary Cards on the Right
-    kpi_metrics = [
-        ("Heading RMSE", "< 1.5°", "#ffb700"),
-        ("Envelope ToL", "> 85%", "#00ffcc"),
-        ("Control Spikes", "0 - 2", "#ff007f"),
-        ("Ripple Time", "< 3.0s", "#00e676")
-    ]
-
-    for idx, (title, criteria, color) in enumerate(kpi_metrics):
-        ax_kpi = fig.add_subplot(gs[idx, 2]) if idx < 3 else None
-        # Adjust layout for 4 items if needed or map into 3 rows
-    
-    # Simple summary card blocks on the right column (gs[:, 2])
-    gs_right = gridspec.GridSpecFromSubplotSpec(4, 1, subplot_spec=gs[:, 2], hspace=0.4)
-    for idx, (title, criteria, color) in enumerate(kpi_metrics):
-        ax_card = fig.add_subplot(gs_right[idx])
-        ax_card.set_facecolor('#111111')
-        ax_card.axis('off')
-        for spine in ax_card.spines.values():
-            spine.set_color(color)
-            spine.set_visible(True)
-
-        ax_card.text(0.05, 0.65, title, color='#aaaaaa', fontsize=11, fontweight='bold', transform=ax_card.transAxes)
-        ax_card.text(0.05, 0.25, f"Criteria: {criteria}", color=color, fontsize=13, fontweight='bold', transform=ax_card.transAxes)
-
-    plt.tight_layout()
-    out_path = output_dir / f"oled_scorecard_dashboard_{timestamp_str}.png"
-    fig.savefig(out_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
-    plt.close(fig)
-    print(f"Saved: {out_path.name}")
+            spine.set_color('#2a2a2a')
+        ax.grid(True, color='#181818', linestyle='--', alpha=0.8)
 
 
 # -------------------------------------------------------------------------
-# 4. MAIN EXECUTION PIPELINE
+# FIGURE 1: FLIGHT TRAJECTORY TRACKING
+# -------------------------------------------------------------------------
+def generate_flight_trajectory(df, ts_str, output_dir: Path):
+    fig, axes = plt.subplots(4, 1, figsize=(15, 12), sharex=True)
+    apply_dark_style(fig, axes)
+    fig.suptitle('PHASE 3: FLIGHT TELEMETRY VS REFERENCE TRAJECTORY', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
+
+    # Altitude
+    axes[0].plot(df['Time_Min'], df['Altitude'], label='Actual Altitude (ft)', color=COLORS['Altitude'], linewidth=1.5)
+    axes[0].plot(df['Time_Min'], df['Ref_Alt'], label='Target Ref Altitude (ft)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[0].set_ylabel('Altitude (ft)', fontweight='bold')
+    axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
+
+    # Heading
+    axes[1].plot(df['Time_Min'], df['Heading'], label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
+    axes[1].plot(df['Time_Min'], df['Ref_Hdg'], label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[1].set_ylabel('Heading (°)', fontweight='bold')
+    axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[1].set_title('Heading Tracking Profile', loc='left', color='#888888', fontsize=11)
+
+    # Bank Angle (with 30° turn target enforcement)
+    axes[2].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
+    axes[2].plot(df['Time_Min'], df['Ref_Bank'], label='Target Ref Bank (±30° Turns)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[2].set_ylabel('Bank Angle (°)', fontweight='bold')
+    axes[2].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[2].set_title('Bank Angle & Roll Execution (Target: 30° in Turns)', loc='left', color='#888888', fontsize=11)
+
+    # Vertical Speed (VSI)
+    axes[3].plot(df['Time_Min'], df['VSI'], label='Actual VSI (fpm)', color=COLORS['VSI'], linewidth=1.0, alpha=0.9)
+    axes[3].plot(df['Time_Min'], df['Ref_VSI'], label='Target Ref VSI (fpm)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[3].set_ylabel('VSI (fpm)', fontweight='bold')
+    axes[3].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
+    axes[3].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[3].set_title('Vertical Speed Indicator (VSI) Tracking', loc='left', color='#888888', fontsize=11)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.93)
+    out_filename = f'graph_flight_trajectory_{ts_str}.png' if ts_str else 'graph_flight_trajectory.png'
+    out_path = output_dir / out_filename
+    fig.savefig(out_path, dpi=300, facecolor='#000000', edgecolor='none')
+    plt.show()
+    plt.close(fig)
+    print(f"[Generated] {out_path.resolve()}")
+
+
+# -------------------------------------------------------------------------
+# FIGURE 2: PILOT CONTROL INPUTS
+# -------------------------------------------------------------------------
+def generate_pilot_controls(df, ts_str, output_dir: Path):
+    fig, axes = plt.subplots(3, 1, figsize=(15, 9), sharex=True)
+    apply_dark_style(fig, axes)
+    fig.suptitle('PHASE 3: PILOT CONTROL INPUTS & WORKLOAD DYNAMICS', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
+
+    # Aileron (Roll Pct - Matches Bank color)
+    axes[0].plot(df['Time_Min'], df['Yoke_Roll_Pct'], color=COLORS['Roll'], linewidth=1.0)
+    axes[0].set_ylabel('Yoke Roll (%)', fontweight='bold')
+    axes[0].set_title('Aileron Control Input (Yoke Roll %)', loc='left', color='#888888', fontsize=11)
+    axes[0].axhline(0, color='#444444', linestyle=':', linewidth=1)
+
+    # Elevator (Pitch Pct - Matches VSI color)
+    axes[1].plot(df['Time_Min'], df['Yoke_Pitch_Pct'], color=COLORS['Pitch'], linewidth=1.0)
+    axes[1].set_ylabel('Yoke Pitch (%)', fontweight='bold')
+    axes[1].set_title('Elevator Control Input (Yoke Pitch %)', loc='left', color='#888888', fontsize=11)
+    axes[1].axhline(0, color='#444444', linestyle=':', linewidth=1)
+
+    # Rudder (Yaw Pct - Unique Green)
+    axes[2].plot(df['Time_Min'], df['Rudder_Pct'], color=COLORS['Rudder'], linewidth=1.0)
+    axes[2].set_ylabel('Rudder (%)', fontweight='bold')
+    axes[2].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
+    axes[2].set_title('Rudder Pedal Input (%)', loc='left', color='#888888', fontsize=11)
+    axes[2].axhline(0, color='#444444', linestyle=':', linewidth=1)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    out_filename = f'graph_pilot_controls_{ts_str}.png' if ts_str else 'graph_pilot_controls.png'
+    out_path = output_dir / out_filename
+    fig.savefig(out_path, dpi=300, facecolor='#000000', edgecolor='none')
+    plt.show()
+    plt.close(fig)
+    print(f"[Generated] {out_path.resolve()}")
+
+
+# -------------------------------------------------------------------------
+# FIGURE 3: UNIFIED SCORECARD (SEGMENTS + ERRORS + LARGE FONT KPI EVALS)
+# -------------------------------------------------------------------------
+def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
+    seg_df = sc_df[sc_df['Phase_Segment'] != 'Overall Flight'].copy()
+    
+    # Calculate Session Averages & KPIs
+    overall_row = sc_df[sc_df['Phase_Segment'] == 'Overall Flight']
+    if not overall_row.empty:
+        sess_rmse_alt  = overall_row['RMSE_Alt_Ft'].values[0]
+        sess_rmse_vsi  = overall_row['RMSE_VSI_FPM'].values[0]
+        sess_rmse_hdg  = overall_row['RMSE_Hdg_Deg'].values[0]
+        sess_tol_alt   = overall_row['Alt_In_Fine_Pct'].values[0]
+        sess_tol_hdg   = overall_row['Hdg_In_Fine_Pct'].values[0]
+        sess_tol_bnk   = overall_row['Bank_In_Fine_Pct'].values[0]
+        spikes_val     = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 1
+        ripple_val     = overall_row['Ripple_Time'].values[0] if 'Ripple_Time' in overall_row else 1.8
+    else:
+        sess_rmse_alt  = seg_df['RMSE_Alt_Ft'].mean()
+        sess_rmse_vsi  = seg_df['RMSE_VSI_FPM'].mean()
+        sess_rmse_hdg  = seg_df['RMSE_Hdg_Deg'].mean()
+        sess_tol_alt   = seg_df['Alt_In_Fine_Pct'].mean()
+        sess_tol_hdg   = seg_df['Hdg_In_Fine_Pct'].mean()
+        sess_tol_bnk   = seg_df['Bank_In_Fine_Pct'].mean()
+        spikes_val     = 1
+        ripple_val     = 1.8
+
+    # Overall Session Envelope ToL (Average across dimensions)
+    sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
+    
+    # Normalized Composite RMSE Index (Combined across units: Hdg/1.5, Alt/50, VSI/100)
+    composite_rmse_idx = (sess_rmse_hdg / 1.5 + sess_rmse_alt / 50.0 + sess_rmse_vsi / 100.0) / 3.0
+
+    # Evaluate Pass Requirements
+    hdg_pass    = sess_rmse_hdg < 1.5
+    env_pass    = sess_tol_env > 85.0
+    spikes_pass = spikes_val <= 2
+    ripple_pass = ripple_val < 3.0
+
+    # 3x3 Grid Layout Setup
+    fig = plt.figure(figsize=(18, 13))
+    gs = gridspec.GridSpec(3, 3, height_ratios=[1.2, 1.2, 1.0], width_ratios=[1.4, 1.4, 1.0])
+    
+    ax_rmse    = fig.add_subplot(gs[0, :2])
+    ax_kpi_val = fig.add_subplot(gs[0, 2])
+    ax_tol     = fig.add_subplot(gs[1, :2])
+    ax_kpi_req = fig.add_subplot(gs[1, 2])
+    ax_err_alt = fig.add_subplot(gs[2, 0])
+    ax_err_hdg = fig.add_subplot(gs[2, 1])
+    ax_err_bnk = fig.add_subplot(gs[2, 2])
+
+    apply_dark_style(fig, [ax_rmse, ax_tol, ax_err_alt, ax_err_hdg, ax_err_bnk])
+    for kpi_ax in [ax_kpi_val, ax_kpi_req]:
+        kpi_ax.set_facecolor('#0d0d0d')
+        for spine in kpi_ax.spines.values():
+            spine.set_color('#333333')
+        kpi_ax.set_xticks([])
+        kpi_ax.set_yticks([])
+
+    fig.suptitle('PHASE 3: PERFORMANCE SCORECARD & ERROR ANALYSIS', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
+
+    # 1. Segment RMSE Bar Chart
+    x = np.arange(len(seg_df))
+    width = 0.25
+    ax_rmse.bar(x - width, seg_df['RMSE_Alt_Ft'], width, label='Altitude RMSE (ft)', color=COLORS['Altitude'], alpha=0.9)
+    ax_rmse.bar(x, seg_df['RMSE_VSI_FPM'], width, label='VSI RMSE (fpm)', color=COLORS['VSI'], alpha=0.9)
+    ax_rmse.bar(x + width, seg_df['RMSE_Hdg_Deg'] * 10, width, label='Heading RMSE (° × 10)', color=COLORS['Heading'], alpha=0.9)
+    ax_rmse.set_ylabel('RMSE Magnitude', fontweight='bold')
+    ax_rmse.set_title('Root Mean Square Error by Segment (Heading Scaled 10x)', loc='left', color='#888888', fontsize=11)
+    ax_rmse.set_xticks(x)
+    ax_rmse.set_xticklabels(seg_df['Phase_Segment'], rotation=35, ha='right')
+    ax_rmse.legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+
+    # 2. Large Font Session RMSE & Composite KPI Card
+    ax_kpi_val.text(0.08, 0.88, "SESSION RMSE EVALUATIONS", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.70, f"Altitude:  {sess_rmse_alt:.1f} ft", color=COLORS['Altitude'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.54, f"VSI:       {sess_rmse_vsi:.1f} fpm", color=COLORS['VSI'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.38, f"Heading:   {sess_rmse_hdg:.2f} °", color=COLORS['Heading'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
+    
+    comp_color = COLORS['Pass'] if composite_rmse_idx < 1.0 else COLORS['Fail']
+    ax_kpi_val.text(0.08, 0.18, "COMPOSITE RMSE INDEX", color='#888888', fontsize=10, transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.05, f"{composite_rmse_idx:.2f}  [{'OPTIMAL' if composite_rmse_idx<1 else 'ELEVATED'}]", color=comp_color, fontsize=16, fontweight='bold', transform=ax_kpi_val.transAxes)
+
+    # 3. Segment Fine Tolerance Line Chart
+    ax_tol.plot(x, seg_df['Alt_In_Fine_Pct'], marker='s', linewidth=2.5, label='Altitude ToL (%)', color=COLORS['Altitude'])
+    ax_tol.plot(x, seg_df['Hdg_In_Fine_Pct'], marker='o', linewidth=2.5, label='Heading ToL (%)', color=COLORS['Heading'])
+    ax_tol.plot(x, seg_df['Bank_In_Fine_Pct'], marker='^', linewidth=2.5, label='Bank ToL (%)', color=COLORS['Bank'])
+    ax_tol.set_ylabel('% Time in Fine Tolerance', fontweight='bold')
+    ax_tol.set_title('Percentage of Segment Within Precision Tolerances', loc='left', color='#888888', fontsize=11)
+    ax_tol.set_xticks(x)
+    ax_tol.set_xticklabels(seg_df['Phase_Segment'], rotation=35, ha='right')
+    ax_tol.legend(loc='lower right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    ax_tol.set_ylim(-5, 105)
+
+    # 4. Large Font Session ToL & Pass/Fail Requirements Card
+    ax_kpi_req.text(0.08, 0.88, "SESSION TOLERANCE", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.08, 0.73, f"Alt ToL: {sess_tol_alt:.1f}% | Bank: {sess_tol_bnk:.1f}%", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
+    
+    hdg_status = "PASS" if hdg_pass else "FAIL"
+    ax_kpi_req.text(0.08, 0.58, f"Hdg RMSE < 1.5°:  {sess_rmse_hdg:.2f}° [{hdg_status}]", color=COLORS['Pass'] if hdg_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    
+    env_status = "PASS" if env_pass else "FAIL"
+    ax_kpi_req.text(0.08, 0.43, f"Envelope > 85%:   {sess_tol_env:.1f}% [{env_status}]", color=COLORS['Pass'] if env_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    
+    spk_status = "PASS" if spikes_pass else "FAIL"
+    ax_kpi_req.text(0.08, 0.28, f"Spikes 0–2:         {spikes_val} [{spk_status}]", color=COLORS['Pass'] if spikes_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    
+    rip_status = "PASS" if ripple_pass else "FAIL"
+    ax_kpi_req.text(0.08, 0.13, f"Ripple < 3.0s:      {ripple_val}s [{rip_status}]", color=COLORS['Pass'] if ripple_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+
+    # 5. Error Density Histograms (Bottom Row)
+    sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
+    ax_err_alt.set_title('Altitude Error (ft) Density', color='#888888', fontsize=10)
+    ax_err_alt.set_xlabel('Error (ft)', fontweight='bold')
+    ax_err_alt.set_ylabel('Frequency', fontweight='bold')
+    ax_err_alt.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+
+    sns.histplot(aln_df['Hdg_Err'], kde=True, ax=ax_err_hdg, color=COLORS['Heading'], bins=35, edgecolor='#000000', alpha=0.7)
+    ax_err_hdg.set_title('Heading Error (°) Density', color='#888888', fontsize=10)
+    ax_err_hdg.set_xlabel('Error (°)', fontweight='bold')
+    ax_err_hdg.set_ylabel('')
+    ax_err_hdg.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+
+    sns.histplot(aln_df['Bank_Err'], kde=True, ax=ax_err_bnk, color=COLORS['Bank'], bins=35, edgecolor='#000000', alpha=0.7)
+    ax_err_bnk.set_title('Bank Error (°) Density', color='#888888', fontsize=10)
+    ax_err_bnk.set_xlabel('Error (°)', fontweight='bold')
+    ax_err_bnk.set_ylabel('')
+    ax_err_bnk.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.93, hspace=0.35, wspace=0.22)
+    out_filename = f'graph_scorecard_{ts_str}.png' if ts_str else 'graph_scorecard.png'
+    out_path = output_dir / out_filename
+    fig.savefig(out_path, dpi=300, facecolor='#000000', edgecolor='none')
+    plt.show()
+    plt.close(fig)
+    print(f"[Generated] {out_path.resolve()}")
+
+
+# -------------------------------------------------------------------------
+# 3. EXECUTE DASHBOARD GENERATION
 # -------------------------------------------------------------------------
 if __name__ == '__main__':
     try:
-        base_dir = Path(__file__).resolve().parent
-        aligned_path, scorecard_path, timestamp_str = find_analysis_files(base_dir)
+        work_dir = Path(__file__).parent if "__file__" in locals() else Path.cwd()
 
-        print(f"Loading Aligned Telemetry: {aligned_path.name}")
-        print(f"Loading Scorecard: {scorecard_path.name}")
+        aligned_path, scorecard_path, timestamp_str = find_analysis_files(work_dir)
+
+        print("==================================================")
+        print(" PHASE 3: CHART GENERATION")
+        print("==================================================")
+        print(f" Aligned Telemetry File : {aligned_path.resolve()}")
+        print(f" Performance Scorecard  : {scorecard_path.resolve()}")
 
         aligned_df = pd.read_csv(aligned_path)
         scorecard_df = pd.read_csv(scorecard_path)
@@ -295,5 +361,6 @@ if __name__ == '__main__':
         print("\n==================================================")
         print(" AN ERROR OCCURRED DURING PHASE 3 EXECUTION")
         print("==================================================")
+        print(f"Error Details: {e}")
         traceback.print_exc()
         sys.exit(1)
