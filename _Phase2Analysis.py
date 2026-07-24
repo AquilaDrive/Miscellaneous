@@ -153,6 +153,8 @@ class FlightPerformanceAnalyzer:
     ) -> pd.DataFrame:
         # Standardize Telemetry Columns dynamically
         telem_df = normalize_telemetry_columns(telem_df)
+        
+        telem_df["Bank"] = -1.0 * telem_df["Bank"]
 
         telem_df["Timestamp"] = pd.to_datetime(telem_df["Timestamp"])
         ref_df["Timestamp"] = pd.to_datetime(ref_df["Timestamp"])
