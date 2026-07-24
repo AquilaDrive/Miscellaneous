@@ -136,16 +136,16 @@ class FlightPerformanceAnalyzer:
     def __init__(self):
         # Envelope Limits
         self.TOLERANCE_FINE = {
-            "Hdg": 2.0,   # deg
+            "Hdg": 2.0,  # deg
             "Bank": 3.0,  # deg
             "Alt": 50.0,  # ft
-            "VSI": 200.0, # fpm
+            "VSI": 200.0,  # fpm
         }
         self.TOLERANCE_STANDARD = {
-            "Hdg": 5.0,   # deg
+            "Hdg": 5.0,  # deg
             "Bank": 5.0,  # deg
-            "Alt": 100.0, # ft
-            "VSI": 500.0, # fpm
+            "Alt": 100.0,  # ft
+            "VSI": 500.0,  # fpm
         }
 
     def process_and_align(
@@ -165,12 +165,6 @@ class FlightPerformanceAnalyzer:
             on="Timestamp",
             direction="nearest",
         )
-
-        # Enforce Aviation Standard Sign Convention for Bank Angle:
-        # Right Turn (increasing heading) = Positive Bank (+30°)
-        # Cartesian reference generators output negative bank for right turns; invert to align with aviation frame.
-        if "Ref_Bank" in merged.columns:
-            merged["Ref_Bank"] = -merged["Ref_Bank"]
 
         # Calculate error metrics
         merged["Hdg_Err"] = (
