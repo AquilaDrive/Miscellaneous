@@ -4,6 +4,7 @@ import traceback
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.ticker import MultipleLocator, FuncFormatter
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -122,7 +123,6 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
 
     # Heading (Continuous Unwrapped Logic & Repeating 0-360 Axis Labels)
 
-    from matplotlib.ticker import FuncFormatter
     unwrapped_hdg = unwrap_degrees(df['Heading'])
     unwrapped_ref_hdg = unwrap_degrees(df['Ref_Hdg'])
 
@@ -132,8 +132,19 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[1].set_title('Heading Tracking Profile (Continuous Angle Logic)', loc='left', color='#888888', fontsize=11)
     
+    # Force y-axis ticks to step at clean standard 90-degree intervals
+    axes[1].yaxis.set_major_locator(MultipleLocator(90))
+
     # Format y-axis to display repeating 0°-360° values cleanly
-    axes[1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x % 360)}°"))
+    axes[1].yaxis.set_major_formatter(
+        FuncFormatter(
+            lambda x, pos: (
+                f"{int(x)}°"
+                if (int(x) % 360 == 0 and x > 0)
+                else f"{int(x % 360)}°"
+            )
+        )
+    )
 
     # Bank Angle (with 30° turn target enforcement)
     axes[2].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
