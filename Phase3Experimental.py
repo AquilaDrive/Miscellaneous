@@ -93,6 +93,12 @@ def apply_dark_style(fig, axes):
         ax.grid(True, color='#181818', linestyle='--', alpha=0.8)
 
 
+def unwrap_degrees(deg_array):
+    """Unwraps degree angles to maintain continuity across 0/360 boundaries."""
+    rads = np.deg2rad(deg_array)
+    return np.rad2deg(np.unwrap(rads))
+
+
 # -------------------------------------------------------------------------
 # FIGURE 1: FLIGHT TRAJECTORY TRACKING
 # -------------------------------------------------------------------------
@@ -108,12 +114,18 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
 
-    # Heading
-    axes[1].plot(df['Time_Min'], df['Heading'], label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
-    axes[1].plot(df['Time_Min'], df['Ref_Hdg'], label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    # Heading (Continuous unwrapped angles with repeating 0-360 axis ticks)
+    act_hdg_unwrapped = unwrap_degrees(df['Heading'])
+    ref_hdg_unwrapped = unwrap_degrees(df['Ref_Hdg'])
+
+    axes[1].plot(df['Time_Min'], act_hdg_unwrapped, label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
+    axes[1].plot(df['Time_Min'], ref_hdg_unwrapped, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[1].set_ylabel('Heading (°)', fontweight='bold')
     axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[1].set_title('Heading Tracking Profile', loc='left', color='#888888', fontsize=11)
+    axes[1].set_title('Heading Tracking Profile (Continuous Domain)', loc='left', color='#888888', fontsize=11)
+
+    # Formatter to wrap repeating 0-360 degree labels on the left axis
+    axes[1].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{int(round(x)) % 360}°"))
 
     # Bank Angle (with 30° turn target enforcement)
     axes[2].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
@@ -183,85 +195,69 @@ def generate_pilot_controls(df, ts_str, output_dir: Path):
 def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     seg_df = sc_df[sc_df['Phase_Segment'] != 'Overall Flight'].copy()
     
-    # Calculate Session Averages & KPIs
     overall_row = sc_df[sc_df['Phase_Segment'] == 'Overall Flight']
     if not overall_row.empty:
-        sess_rmse_alt  = overall_row['RMSE_Alt_Ft'].values[0]
-        sess_rmse_vsi  = overall_row['RMSE_VSI_FPM'].values[0]
-        sess_rmse_hdg  = overall_row['RMSE_Hdg_Deg'].values[0]
-        sess_tol_alt   = overall_row['Alt_In_Fine_Pct'].values[0]
-        sess_tol_hdg   = overall_row['Hdg_In_Fine_Pct'].values[0]
-        sess_tol_bnk   = overall_row['Bank_In_Fine_Pct'].values[0]
-        spikes_val     = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 1
-        ripple_val     = overall_row['Ripple_Time'].values[0] if 'Ripple_Time' in overall_row else 1.8
+        sess_rmse_alt = overall_row['RMSE_Alt_Ft'].values[0]
+        sess_rmse_vsi = overall_row['RMSE_VSI_FPM'].values[0]
+        sess_rmse_hdg = overall_row['RMSE_Hdg_Deg'].values[0]
+        sess_tol_alt = overall_row['Alt_In_Fine_Pct'].values[0]
+        sess_tol_hdg = overall_row['Hdg_In_Fine_Pct'].values[0]
+        sess_tol_bnk = overall_row['Bank_In_Fine_Pct'].values[0]
+        spikes_val = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 1
+        ripple_val = overall_row['Ripple_Time'].values[0] if 'Ripple_Time' in overall_row else 1.8
     else:
-        sess_rmse_alt  = seg_df['RMSE_Alt_Ft'].mean()
-        sess_rmse_vsi  = seg_df['RMSE_VSI_FPM'].mean()
-        sess_rmse_hdg  = seg_df['RMSE_Hdg_Deg'].mean()
-        sess_tol_alt   = seg_df['Alt_In_Fine_Pct'].mean()
-        sess_tol_hdg   = seg_df['Hdg_In_Fine_Pct'].mean()
-        sess_tol_bnk   = seg_df['Bank_In_Fine_Pct'].mean()
-        spikes_val     = 1
-        ripple_val     = 1.8
+        sess_rmse_alt = seg_df['RMSE_Alt_Ft'].mean()
+        sess_rmse_vsi = seg_df['RMSE_VSI_FPM'].mean()
+        sess_rmse_hdg = seg_df['RMSE_Hdg_Deg'].mean()
+        sess_tol_alt = seg_df['Alt_In_Fine_Pct'].mean()
+        sess_tol_hdg = seg_df['Hdg_In_Fine_Pct'].mean()
+        sess_tol_bnk = seg_df['Bank_In_Fine_Pct'].mean()
+        spikes_val = 1
+        ripple_val = 1.8
 
-    # Overall Session Envelope ToL (Average across dimensions)
     sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
-    
-    # Normalized Composite RMSE Index (Combined across units: Hdg/1.5, Alt/50, VSI/100)
     composite_rmse_idx = (sess_rmse_hdg / 1.5 + sess_rmse_alt / 50.0 + sess_rmse_vsi / 100.0) / 3.0
 
-    # Evaluate Pass Requirements
-    hdg_pass    = sess_rmse_hdg < 1.5
-    env_pass    = sess_tol_env > 85.0
+    hdg_pass = sess_rmse_hdg < 1.5
+    env_pass = sess_tol_env > 85.0
     spikes_pass = spikes_val <= 2
     ripple_pass = ripple_val < 3.0
 
-    # 3x3 Grid Layout Setup
     fig = plt.figure(figsize=(18, 13))
     gs = gridspec.GridSpec(3, 3, height_ratios=[1.2, 1.2, 1.0], width_ratios=[1.4, 1.4, 1.0])
-    
-    ax_rmse    = fig.add_subplot(gs[0, :2])
+    ax_rmse = fig.add_subplot(gs[0, :2])
     ax_kpi_val = fig.add_subplot(gs[0, 2])
-    ax_tol     = fig.add_subplot(gs[1, :2])
+    ax_tol = fig.add_subplot(gs[1, :2])
     ax_kpi_req = fig.add_subplot(gs[1, 2])
     ax_err_alt = fig.add_subplot(gs[2, 0])
     ax_err_hdg = fig.add_subplot(gs[2, 1])
     ax_err_bnk = fig.add_subplot(gs[2, 2])
 
-    apply_dark_style(fig, [ax_rmse, ax_tol, ax_err_alt, ax_err_hdg, ax_err_bnk])
-    for kpi_ax in [ax_kpi_val, ax_kpi_req]:
-        kpi_ax.set_facecolor('#0d0d0d')
-        for spine in kpi_ax.spines.values():
-            spine.set_color('#333333')
-        kpi_ax.set_xticks([])
-        kpi_ax.set_yticks([])
+    apply_dark_style(fig, [ax_rmse, ax_tol, ax_err_alt, ax_err_hdg, ax_err_bnk, ax_kpi_val, ax_kpi_req])
 
-    fig.suptitle('PHASE 3: PERFORMANCE SCORECARD & ERROR ANALYSIS', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
-
-    # 1. Segment RMSE Bar Chart
     x = np.arange(len(seg_df))
+
+    # 1. RMSE Bar Chart
     width = 0.25
-    ax_rmse.bar(x - width, seg_df['RMSE_Alt_Ft'], width, label='Altitude RMSE (ft)', color=COLORS['Altitude'], alpha=0.9)
-    ax_rmse.bar(x, seg_df['RMSE_VSI_FPM'], width, label='VSI RMSE (fpm)', color=COLORS['VSI'], alpha=0.9)
-    ax_rmse.bar(x + width, seg_df['RMSE_Hdg_Deg'] * 10, width, label='Heading RMSE (° × 10)', color=COLORS['Heading'], alpha=0.9)
-    ax_rmse.set_ylabel('RMSE Magnitude', fontweight='bold')
-    ax_rmse.set_title('Root Mean Square Error by Segment (Heading Scaled 10x)', loc='left', color='#888888', fontsize=11)
+    ax_rmse.bar(x - width, seg_df['RMSE_Alt_Ft'], width, label='Alt RMSE (ft)', color=COLORS['Altitude'], alpha=0.9)
+    ax_rmse.bar(x, seg_df['RMSE_Hdg_Deg'], width, label='Hdg RMSE (°)', color=COLORS['Heading'], alpha=0.9)
+    ax_rmse.bar(x + width, seg_df['RMSE_VSI_FPM'] / 10.0, width, label='VSI RMSE (fpm/10)', color=COLORS['VSI'], alpha=0.9)
+    ax_rmse.set_ylabel('Tracking Error (RMSE)', fontweight='bold')
+    ax_rmse.set_title('Segment Tracking Error (RMSE)', loc='left', color='#888888', fontsize=11)
     ax_rmse.set_xticks(x)
     ax_rmse.set_xticklabels(seg_df['Phase_Segment'], rotation=35, ha='right')
     ax_rmse.legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
 
-    # 2. Large Font Session RMSE & Composite KPI Card
-    ax_kpi_val.text(0.08, 0.88, "SESSION RMSE EVALUATIONS", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.70, f"Altitude:  {sess_rmse_alt:.1f} ft", color=COLORS['Altitude'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.54, f"VSI:       {sess_rmse_vsi:.1f} fpm", color=COLORS['VSI'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.38, f"Heading:   {sess_rmse_hdg:.2f} °", color=COLORS['Heading'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
-    
-    comp_color = COLORS['Pass'] if composite_rmse_idx < 1.0 else COLORS['Fail']
-    ax_kpi_val.text(0.08, 0.18, "COMPOSITE RMSE INDEX", color='#888888', fontsize=10, transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.05, f"{composite_rmse_idx:.2f}  [{'OPTIMAL' if composite_rmse_idx<1 else 'ELEVATED'}]", color=comp_color, fontsize=16, fontweight='bold', transform=ax_kpi_val.transAxes)
+    # 2. Large Font Session RMSE & ToL Card
+    ax_kpi_val.axis('off')
+    ax_kpi_val.text(0.08, 0.85, "SESSION RMSE EVALS", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.65, f"Alt: {sess_rmse_alt:.1f} ft", color=COLORS['Altitude'], fontsize=18, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.45, f"Hdg: {sess_rmse_hdg:.2f}°", color=COLORS['Heading'], fontsize=18, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.25, f"VSI: {sess_rmse_vsi:.0f} fpm", color=COLORS['VSI'], fontsize=18, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.05, f"Composite Index: {composite_rmse_idx:.2f}", color='#ffffff', fontsize=11, transform=ax_kpi_val.transAxes)
 
-    # 3. Segment Fine Tolerance Line Chart
-    ax_tol.plot(x, seg_df['Alt_In_Fine_Pct'], marker='s', linewidth=2.5, label='Altitude ToL (%)', color=COLORS['Altitude'])
+    # 3. Tolerance % Line Chart
+    ax_tol.plot(x, seg_df['Alt_In_Fine_Pct'], marker='o', linewidth=2.5, label='Altitude ToL (%)', color=COLORS['Altitude'])
     ax_tol.plot(x, seg_df['Hdg_In_Fine_Pct'], marker='o', linewidth=2.5, label='Heading ToL (%)', color=COLORS['Heading'])
     ax_tol.plot(x, seg_df['Bank_In_Fine_Pct'], marker='^', linewidth=2.5, label='Bank ToL (%)', color=COLORS['Bank'])
     ax_tol.set_ylabel('% Time in Fine Tolerance', fontweight='bold')
@@ -271,44 +267,35 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_tol.legend(loc='lower right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     ax_tol.set_ylim(-5, 105)
 
-    # 4. Large Font Session ToL & Pass/Fail Requirements Card
-    ax_kpi_req.text(0.08, 0.88, "SESSION TOLERANCE", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    ax_kpi_req.text(0.08, 0.73, f"Alt ToL: {sess_tol_alt:.1f}% | Bank: {sess_tol_bnk:.1f}%", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
+    # 4. Pass/Fail Requirements Card
+    ax_kpi_req.axis('off')
+    ax_kpi_req.text(0.08, 0.85, "PASS / FAIL CRITERIA", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
     
-    hdg_status = "PASS" if hdg_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.58, f"Hdg RMSE < 1.5°:  {sess_rmse_hdg:.2f}° [{hdg_status}]", color=COLORS['Pass'] if hdg_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    
-    env_status = "PASS" if env_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.43, f"Envelope > 85%:   {sess_tol_env:.1f}% [{env_status}]", color=COLORS['Pass'] if env_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    
-    spk_status = "PASS" if spikes_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.28, f"Spikes 0–2:         {spikes_val} [{spk_status}]", color=COLORS['Pass'] if spikes_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    
-    rip_status = "PASS" if ripple_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.13, f"Ripple < 3.0s:      {ripple_val}s [{rip_status}]", color=COLORS['Pass'] if ripple_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    hdg_color = COLORS['Pass'] if hdg_pass else COLORS['Fail']
+    env_color = COLORS['Pass'] if env_pass else COLORS['Fail']
+    spike_color = COLORS['Pass'] if spikes_pass else COLORS['Fail']
+    ripple_color = COLORS['Pass'] if ripple_pass else COLORS['Fail']
 
-    # 5. Error Density Histograms (Bottom Row)
-    sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
-    ax_err_alt.set_title('Altitude Error (ft) Density', color='#888888', fontsize=10)
-    ax_err_alt.set_xlabel('Error (ft)', fontweight='bold')
-    ax_err_alt.set_ylabel('Frequency', fontweight='bold')
-    ax_err_alt.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+    ax_kpi_req.text(0.08, 0.68, f"• Hdg RMSE < 1.5°: {sess_rmse_hdg:.2f}°", color=hdg_color, fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.08, 0.50, f"• Envelope ToL > 85%: {sess_tol_env:.1f}%", color=env_color, fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.08, 0.32, f"• Spikes (0–2): {spikes_val}", color=spike_color, fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.08, 0.14, f"• Ripple Time < 3.0s: {ripple_val:.1f}s", color=ripple_color, fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
 
-    sns.histplot(aln_df['Hdg_Err'], kde=True, ax=ax_err_hdg, color=COLORS['Heading'], bins=35, edgecolor='#000000', alpha=0.7)
-    ax_err_hdg.set_title('Heading Error (°) Density', color='#888888', fontsize=10)
-    ax_err_hdg.set_xlabel('Error (°)', fontweight='bold')
-    ax_err_hdg.set_ylabel('')
-    ax_err_hdg.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+    # 5. Error Distribution Subplots (Bottom row)
+    sns.histplot(aln_df['Altitude'] - aln_df['Ref_Alt'], ax=ax_err_alt, color=COLORS['Altitude'], kde=True, bins=30)
+    ax_err_alt.set_title("Altitude Error Distribution", loc='left', color='#888888', fontsize=10)
+    ax_err_alt.set_xlabel("Error (ft)", fontweight='bold')
 
-    sns.histplot(aln_df['Bank_Err'], kde=True, ax=ax_err_bnk, color=COLORS['Bank'], bins=35, edgecolor='#000000', alpha=0.7)
-    ax_err_bnk.set_title('Bank Error (°) Density', color='#888888', fontsize=10)
-    ax_err_bnk.set_xlabel('Error (°)', fontweight='bold')
-    ax_err_bnk.set_ylabel('')
-    ax_err_bnk.axvline(0, color='#ffffff', linestyle='--', linewidth=1.2)
+    sns.histplot(aln_df['Heading'] - aln_df['Ref_Hdg'], ax=ax_err_hdg, color=COLORS['Heading'], kde=True, bins=30)
+    ax_err_hdg.set_title("Heading Error Distribution", loc='left', color='#888888', fontsize=10)
+    ax_err_hdg.set_xlabel("Error (°)", fontweight='bold')
+
+    sns.histplot(aln_df['Bank'] - aln_df['Ref_Bank'], ax=ax_err_bnk, color=COLORS['Bank'], kde=True, bins=30)
+    ax_err_bnk.set_title("Bank Error Distribution", loc='left', color='#888888', fontsize=10)
+    ax_err_bnk.set_xlabel("Error (°)", fontweight='bold')
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93, hspace=0.35, wspace=0.22)
-    out_filename = f'graph_scorecard_{ts_str}.png' if ts_str else 'graph_scorecard.png'
+    out_filename = f'graph_scorecard_dashboard_{ts_str}.png' if ts_str else 'graph_scorecard_dashboard.png'
     out_path = output_dir / out_filename
     fig.savefig(out_path, dpi=300, facecolor='#000000', edgecolor='none')
     plt.show()
@@ -317,19 +304,20 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
 
 
 # -------------------------------------------------------------------------
-# 3. EXECUTE DASHBOARD GENERATION
+# MAIN EXECUTION
 # -------------------------------------------------------------------------
 if __name__ == '__main__':
     try:
-        work_dir = Path(__file__).parent if "__file__" in locals() else Path.cwd()
-
-        aligned_path, scorecard_path, timestamp_str = find_analysis_files(work_dir)
-
         print("==================================================")
-        print(" PHASE 3: CHART GENERATION")
+        print(" PHASE 3 CHART GENERATOR (CONTINUOUS HEADING)")
         print("==================================================")
-        print(f" Aligned Telemetry File : {aligned_path.resolve()}")
-        print(f" Performance Scorecard  : {scorecard_path.resolve()}")
+
+        base_script_dir = Path(__file__).parent
+        aligned_path, scorecard_path, timestamp_str = find_analysis_files(base_script_dir)
+
+        print(f"[*] Discovered Aligned Telemetry: {aligned_path.name}")
+        print(f"[*] Discovered Scorecard: {scorecard_path.name}")
+        print(f"[*] Session Timestamp Tag: {timestamp_str}")
 
         aligned_df = pd.read_csv(aligned_path)
         scorecard_df = pd.read_csv(scorecard_path)
@@ -346,7 +334,6 @@ if __name__ == '__main__':
                 np.where(aligned_df['Ref_Bank'] < -turn_threshold, -30.0, 0.0)
             )
 
-        # Output charts in parent folder where session CSVs reside
         output_dir = aligned_path.parent
 
         generate_flight_trajectory(aligned_df, timestamp_str, output_dir)
@@ -361,6 +348,5 @@ if __name__ == '__main__':
         print("\n==================================================")
         print(" AN ERROR OCCURRED DURING PHASE 3 EXECUTION")
         print("==================================================")
-        print(f"Error Details: {e}")
         traceback.print_exc()
         sys.exit(1)
