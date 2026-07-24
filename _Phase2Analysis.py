@@ -252,8 +252,8 @@ class FlightPerformanceAnalyzer:
         # 2. Ripple Time (Sec): Duration spent in rapid micro-oscillation corrections
         micro_reversals = np.zeros(n, dtype=bool)
         if n > 2:
-            hdg_dir_change = np.pad(np.diff(np.sign(hdg_rate)) != 0, (1, 0), False)
-            bank_dir_change = np.pad(np.diff(np.sign(bank_rate)) != 0, (1, 0), False)
+            hdg_dir_change = np.pad(np.diff(np.sign(hdg_rate)) != 0, (2, 0), mode='constant', constant_values=False)
+            bank_dir_change = np.pad(np.diff(np.sign(bank_rate)) != 0, (2, 0), mode='constant', constant_values=False)
             fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
                                (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
             micro_reversals = (hdg_dir_change | bank_dir_change) & fine_band_active
