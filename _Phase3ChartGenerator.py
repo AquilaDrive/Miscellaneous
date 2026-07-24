@@ -96,6 +96,18 @@ def apply_dark_style(fig, axes):
 # -------------------------------------------------------------------------
 # FIGURE 1: FLIGHT TRAJECTORY TRACKING
 # -------------------------------------------------------------------------
+def unwrap_degrees(deg_series):
+    """Unwraps degree series so transitions across 360->0 extend smoothly (e.g., 350 -> 390)."""
+    arr = np.asarray(deg_series, dtype=float)
+    if len(arr) == 0:
+        return arr
+    diff = np.diff(arr)
+    diff = (diff + 180) % 360 - 180
+    unwrapped = np.empty_like(arr)
+    unwrapped[0] = arr[0]
+    unwrapped[1:] = arr[0] + np.cumsum(diff)
+    return unwrapped
+    
 def generate_flight_trajectory(df, ts_str, output_dir: Path):
     fig, axes = plt.subplots(4, 1, figsize=(15, 12), sharex=True)
     apply_dark_style(fig, axes)
@@ -108,12 +120,20 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
 
-    # Heading
-    axes[1].plot(df['Time_Min'], df['Heading'], label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
-    axes[1].plot(df['Time_Min'], df['Ref_Hdg'], label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    # Heading (Continuous Unwrapped Logic & Repeating 0-360 Axis Labels)
+
+    from matplotlib.ticker import FuncFormatter
+    unwrapped_hdg = unwrap_degrees(df['Heading'])
+    unwrapped_ref_hdg = unwrap_degrees(df['Ref_Hdg'])
+
+    axes[1].plot(df['Time_Min'], unwrapped_hdg, label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
+    axes[1].plot(df['Time_Min'], unwrapped_ref_hdg, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[1].set_ylabel('Heading (°)', fontweight='bold')
     axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[1].set_title('Heading Tracking Profile', loc='left', color='#888888', fontsize=11)
+    axes[1].set_title('Heading Tracking Profile (Continuous Angle Logic)', loc='left', color='#888888', fontsize=11)
+    
+    # Format y-axis to display repeating 0°-360° values cleanly
+    axes[1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x % 360)}°"))
 
     # Bank Angle (with 30° turn target enforcement)
     axes[2].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
