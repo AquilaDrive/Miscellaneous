@@ -232,6 +232,34 @@ class FlightPerformanceAnalyzer:
             np.diff(np.sign(bank_rate[bank_rate != 0])) != 0
         )
 
+        # Time delta estimation
+        dt = (
+            (df["Timestamp"].iloc[-1] - df["Timestamp"].iloc[0]).total_seconds() / max(n - 1, 1)
+            if n > 1 else 1.0
+        )
+
+        # 1. Spikes Count: Severe transient composite error excursions (>2x Standard Tolerance)
+        norm_err = np.sqrt(
+            (df["Hdg_Err"] / self.TOLERANCE_STANDARD["Hdg"]) ** 2
+            + (df["Bank_Err"] / self.TOLERANCE_STANDARD["Bank"]) ** 2
+            + (df["Alt_Err"] / self.TOLERANCE_STANDARD["Alt"]) ** 2
+        )
+        is_spike = norm_err > 2.0
+        spike_events = int(np.sum(np.diff(is_spike.astype(int)) == 1))
+        if len(is_spike) > 0 and is_spike.iloc[0]:
+            spike_events += 1
+
+        # 2. Ripple Time (Sec): Duration spent in rapid micro-oscillation corrections
+        micro_reversals = np.zeros(n, dtype=bool)
+        if n > 2:
+            hdg_dir_change = np.pad(np.diff(np.sign(hdg_rate)) != 0, (1, 0), False)
+            bank_dir_change = np.pad(np.diff(np.sign(bank_rate)) != 0, (1, 0), False)
+            fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
+                               (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
+            micro_reversals = (hdg_dir_change | bank_dir_change) & fine_band_active
+
+        ripple_time_sec = float(np.sum(micro_reversals) * dt)
+
         return {
             "Phase_Segment": label,
             "Duration_Sec": round((df["Timestamp"].iloc[-1] - df["Timestamp"].iloc[0]).total_seconds(), 1),
@@ -247,6 +275,8 @@ class FlightPerformanceAnalyzer:
             "Bank_In_Std_Pct": round(std_bank_pct, 1),
             "Hdg_Oscillations": int(hdg_reversals),
             "Bank_Oscillations": int(bank_reversals),
+            "Spikes": spike_events,
+            "Ripple_Time": round(ripple_time_sec, 2),
         }
 
 
@@ -302,6 +332,8 @@ if __name__ == "__main__":
                     "Hdg_In_Fine_Pct",
                     "Alt_In_Fine_Pct",
                     "Hdg_Oscillations",
+                    "Spikes",
+                    "Ripple_Time",
                 ]
             ].to_string(index=False)
         )
