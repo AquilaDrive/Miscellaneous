@@ -152,7 +152,7 @@ class ReferenceTrajectoryGenerator:
                 event_idx += 1
 
             # -------------------------------------------------------------
-            # Bank & Heading Kinematics (Aviation Standard Corrected)
+            # Bank & Heading Kinematics (Corrected Bank Conventions)
             # -------------------------------------------------------------
             # Shortest angular distance (-180 to +180 deg)
             # Positive hdg_diff = Right Turn (Heading increases)
@@ -172,12 +172,12 @@ class ReferenceTrajectoryGenerator:
             if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
                 curr_hdg = target_hdg
                 desired_bank = 0.0
-            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
-                hdg_diff
-            ) == np.sign(curr_bank):
+            # Check rollout condition: bank direction matches heading turn direction
+            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and (
+                (hdg_diff > 0 and curr_bank > 0) or (hdg_diff < 0 and curr_bank < 0)
+            ):
                 desired_bank = 0.0
             else:
-                # AVIATION STANDARD FIX:
                 # Right Turn (hdg_diff > 0) -> Positive Bank (+max_bank)
                 # Left Turn  (hdg_diff < 0) -> Negative Bank (-max_bank)
                 bank_dir = np.sign(hdg_diff) if hdg_diff != 0 else 1.0
