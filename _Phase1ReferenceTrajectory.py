@@ -151,20 +151,21 @@ class ReferenceTrajectoryGenerator:
                     target_vsi = float(ev["Target_VSI_FPM"])
                 event_idx += 1
 
-            # ----------------------------------------------------
-            # BANK & HEADING KINEMATICS (AVIATION STANDARD SIGN CONVENTION)
-            # Right Turn: hdg_diff > 0 -> POSITIVE Bank (+max_bank)
-            # Left Turn : hdg_diff < 0 -> NEGATIVE Bank (-max_bank)
-            # ----------------------------------------------------
+            # -------------------------------------------------------------
+            # Bank & Heading Kinematics (Aviation Standard Corrected)
+            # -------------------------------------------------------------
+            # Shortest angular distance (-180 to +180 deg)
+            # Positive hdg_diff = Right Turn (Heading increases)
+            # Negative hdg_diff = Left Turn (Heading decreases)
             hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
-            
+
             curr_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0.0
+                else 0
             )
             roll_time = (
-                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0.0
+                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0
             )
             lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
 
@@ -174,26 +175,31 @@ class ReferenceTrajectoryGenerator:
             elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
                 hdg_diff
             ) == np.sign(curr_bank):
-                # Turn rollout point reached
                 desired_bank = 0.0
             else:
-                # Enforce Aviation Standard: +hdg_diff (Right Turn) -> +desired_bank
-                bank_dir = np.sign(hdg_diff) if hdg_diff != 0.0 else 0.0
+                # AVIATION STANDARD FIX:
+                # Right Turn (hdg_diff > 0) -> Positive Bank (+max_bank)
+                # Left Turn  (hdg_diff < 0) -> Negative Bank (-max_bank)
+                bank_dir = np.sign(hdg_diff) if hdg_diff != 0 else 1.0
                 desired_bank = bank_dir * self.max_bank
 
+            # Smoothly transition current bank angle towards desired bank angle
             bank_err = desired_bank - curr_bank
             max_bank_change = self.roll_rate * dt
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
-            # Positive bank produces positive turn rate (increasing heading clockwise)
+            # Turn Rate Dynamics:
+            # Positive bank (+curr_bank) increases heading (+turn_rate)
             actual_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0.0
+                else 0
             )
             curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
 
+            # -------------------------------------------------------------
             # VSI & Altitude Kinematics
+            # -------------------------------------------------------------
             alt_diff = target_alt - curr_alt
             lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
 
