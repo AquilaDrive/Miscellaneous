@@ -42,7 +42,7 @@ def discover_input_files(base_dir: Path):
     atc_path = atc_files[0]
     ts_suffix = extract_timestamp_suffix(atc_path.name)
 
-    print(f" Found ATC File       : {atc_path.name}")
+    print(f" Found ATC File        : {atc_path.name}")
     if ts_suffix:
         print(f" Detected Session Tag : {ts_suffix}")
 
@@ -151,15 +151,20 @@ class ReferenceTrajectoryGenerator:
                     target_vsi = float(ev["Target_VSI_FPM"])
                 event_idx += 1
 
-            # Bank & Heading Kinematics
+            # ----------------------------------------------------
+            # BANK & HEADING KINEMATICS (AVIATION STANDARD SIGN CONVENTION)
+            # Right Turn: hdg_diff > 0 -> POSITIVE Bank (+max_bank)
+            # Left Turn : hdg_diff < 0 -> NEGATIVE Bank (-max_bank)
+            # ----------------------------------------------------
             hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
+            
             curr_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0
+                else 0.0
             )
             roll_time = (
-                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0
+                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0.0
             )
             lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
 
@@ -169,19 +174,22 @@ class ReferenceTrajectoryGenerator:
             elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
                 hdg_diff
             ) == np.sign(curr_bank):
+                # Turn rollout point reached
                 desired_bank = 0.0
             else:
-                bank_dir = np.sign(hdg_diff) if hdg_diff != 0 else 1.0
+                # Enforce Aviation Standard: +hdg_diff (Right Turn) -> +desired_bank
+                bank_dir = np.sign(hdg_diff) if hdg_diff != 0.0 else 0.0
                 desired_bank = bank_dir * self.max_bank
 
             bank_err = desired_bank - curr_bank
             max_bank_change = self.roll_rate * dt
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
+            # Positive bank produces positive turn rate (increasing heading clockwise)
             actual_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0
+                else 0.0
             )
             curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
 
