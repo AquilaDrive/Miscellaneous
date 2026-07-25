@@ -165,7 +165,7 @@ class FlightPerformanceAnalyzer:
         is_paused = (telem_df[telemetry_vars].diff().abs().sum(axis=1) == 0)
         telem_df = telem_df[~is_paused].reset_index(drop=True)
 
-        # Short Til Segment Trim (< 60 SECONDS)
+        # Short Tail Segment Trim (< 60 SECONDS)
         atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
         
         while len(atc_df) > 0:
