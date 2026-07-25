@@ -31,8 +31,9 @@ def extract_timestamp_suffix(filename: str) -> str:
 
 
 def discover_input_files(base_dir: Path):
-    """Finds ATC target files in base_dir."""
+    """Finds ATC target files and optional matching telemetry files in base_dir."""
     atc_files = sorted(list(base_dir.glob("atc_events*.csv")))
+    telem_files = sorted(list(base_dir.glob("flight_telemetry*.csv")))
 
     if not atc_files:
         raise FileNotFoundError(
@@ -42,11 +43,21 @@ def discover_input_files(base_dir: Path):
     atc_path = atc_files[0]
     ts_suffix = extract_timestamp_suffix(atc_path.name)
 
+    telem_path = None
+    if telem_files:
+        if ts_suffix:
+            matched = [f for f in telem_files if ts_suffix in f.name]
+            telem_path = matched[0] if matched else telem_files[0]
+        else:
+            telem_path = telem_files[0]
+
     print(f" Found ATC File        : {atc_path.name}")
+    if telem_path:
+        print(f" Found Telemetry File  : {telem_path.name}")
     if ts_suffix:
         print(f" Detected Session Tag : {ts_suffix}")
 
-    return atc_path, ts_suffix
+    return atc_path, telem_path, ts_suffix
 
 
 def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -100,11 +111,62 @@ class ReferenceTrajectoryGenerator:
         self.turn_rate = turn_rate  # deg/s (standard rate turn)
         self.vsi_ramp_time = vsi_ramp_time  # sec
 
-    def generate_trajectory(
-        self, atc_df: pd.DataFrame, dt=0.1, duration_extension=180
+    def _determine_turn_direction(
+        self, telem_df: pd.DataFrame, t_start: pd.Timestamp, window_sec: float = 30.0
+    ) -> str:
+        """Analyzes pilot telemetry over a 30s window following an ATC command to infer intended turn direction."""
+        if telem_df is None or telem_df.empty or "Timestamp" not in telem_df.columns:
+            return "AUTO"
+
+        bank_col = None
+        lower_cols = {str(col).lower().strip(): col for col in telem_df.columns}
+        for opt in ["bank", "bank_deg", "plane_bank", "bank_angle", "roll", "roll_deg", "plane_roll"]:
+            if opt in lower_cols:
+                bank_col = lower_cols[opt]
+                break
+
+        if not bank_col:
+            return "AUTO"
+
+        t_end = t_start + pd.Timedelta(seconds=window_sec)
+        mask = (telem_df["Timestamp"] >= t_start) & (telem_df["Timestamp"] <= t_end)
+        window = telem_df.loc[mask]
+
+        if window.empty:
+            return "AUTO"
+
+        raw_bank = pd.to_numeric(window[bank_col], errors="coerce").dropna().values
+        if len(raw_bank) == 0:
+            return "AUTO"
+
+        # Align raw telemetry bank sign (+ = Right bank, - = Left bank)
+        aligned_bank = -1.0 * raw_bank if bank_col != "Bank" else raw_bank
+        active_bank = aligned_bank[np.abs(aligned_bank) > 2.0]
+
+        if len(active_bank) == 0:
+            return "AUTO"
+
+        mean_bank = np.mean(active_bank)
+        if mean_bank > 1.5:
+            return "RIGHT"
+        elif mean_bank < -1.5:
+            return "LEFT"
+
+        return "AUTO"
+
+def generate_trajectory(
+        self,
+        atc_df: pd.DataFrame,
+        telem_df: pd.DataFrame = None,
+        dt=0.1,
+        duration_extension=180,
     ) -> pd.DataFrame:
         atc_df = normalize_atc_columns(atc_df)
         atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
+
+        if telem_df is not None:
+            telem_df = telem_df.copy()
+            telem_df["Timestamp"] = pd.to_datetime(telem_df["Timestamp"])
 
         t_start = atc_df["Timestamp"].iloc[0]
         t_end = atc_df["Timestamp"].iloc[-1] + pd.Timedelta(
@@ -133,6 +195,7 @@ class ReferenceTrajectoryGenerator:
         target_hdg = curr_hdg
         target_alt = curr_alt
         target_vsi = 0.0
+        forced_turn_dir = "AUTO"
 
         for i in range(n):
             t_curr = timestamps[i]
@@ -149,15 +212,32 @@ class ReferenceTrajectoryGenerator:
                     target_hdg = float(ev["Target_Hdg"])
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
+                    forced_turn_dir = self._determine_turn_direction(
+                        telem_df, ev["Timestamp"], window_sec=30.0
+                    )
                 event_idx += 1
 
             # -------------------------------------------------------------
-            # Bank & Heading Kinematics (Corrected Bank Conventions)
+            # Bank & Heading Kinematics (Telemetry-Aware Direction Override)
             # -------------------------------------------------------------
             # Shortest angular distance (-180 to +180 deg)
-            # Positive hdg_diff = Right Turn (Heading increases)
-            # Negative hdg_diff = Left Turn (Heading decreases)
-            hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
+            hdg_diff_shortest = (target_hdg - curr_hdg + 180) % 360 - 180
+
+            # Override default shortest arc if pilot telemetry shows intentional long-way turn
+            if (
+                forced_turn_dir == "RIGHT"
+                and hdg_diff_shortest < 0
+                and abs(hdg_diff_shortest) > 90.0
+            ):
+                hdg_diff = (target_hdg - curr_hdg) % 360.0
+            elif (
+                forced_turn_dir == "LEFT"
+                and hdg_diff_shortest > 0
+                and abs(hdg_diff_shortest) > 90.0
+            ):
+                hdg_diff = -((curr_hdg - target_hdg) % 360.0)
+            else:
+                hdg_diff = hdg_diff_shortest
 
             curr_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
@@ -174,7 +254,8 @@ class ReferenceTrajectoryGenerator:
                 desired_bank = 0.0
             # Check rollout condition: bank direction matches heading turn direction
             elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and (
-                (hdg_diff > 0 and curr_bank > 0) or (hdg_diff < 0 and curr_bank < 0)
+                (hdg_diff > 0 and curr_bank > 0)
+                or (hdg_diff < 0 and curr_bank < 0)
             ):
                 desired_bank = 0.0
             else:
@@ -246,13 +327,15 @@ if __name__ == "__main__":
             Path(__file__).parent if "__file__" in locals() else Path.cwd()
         )
 
-        atc_path, ts_suffix = discover_input_files(work_dir)
+        atc_path, telem_path, ts_suffix = discover_input_files(work_dir)
 
         atc_df = pd.read_csv(atc_path)
         atc_df["Timestamp"] = pd.to_datetime(atc_df["Timestamp"])
 
+        telem_df = pd.read_csv(telem_path) if telem_path else None
+
         generator = ReferenceTrajectoryGenerator()
-        ref_traj_df = generator.generate_trajectory(atc_df)
+        ref_traj_df = generator.generate_trajectory(atc_df, telem_df=telem_df)
 
         # Save to parent directory matching input session timestamp
         parent_dir = atc_path.parent
