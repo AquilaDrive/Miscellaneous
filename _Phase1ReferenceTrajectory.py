@@ -30,8 +30,9 @@ def extract_timestamp_suffix(filename: str) -> str:
     return ""
 
 def discover_input_files(base_dir: Path):
-    """Finds ATC target files and optional flight telemetry in base_dir."""
+    """Finds ATC target files and optional matching telemetry files in base_dir."""
     atc_files = sorted(list(base_dir.glob("atc_events*.csv")))
+    telem_files = sorted(list(base_dir.glob("flight_telemetry*.csv")))
 
     if not atc_files:
         raise FileNotFoundError(
@@ -41,8 +42,6 @@ def discover_input_files(base_dir: Path):
     atc_path = atc_files[0]
     ts_suffix = extract_timestamp_suffix(atc_path.name)
 
-    # Search for matching telemetry file for 30-second bank analysis
-    telem_files = sorted(list(base_dir.glob("flight_telemetry*.csv")))
     telem_path = None
     if telem_files:
         if ts_suffix:
