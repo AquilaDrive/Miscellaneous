@@ -29,9 +29,8 @@ def extract_timestamp_suffix(filename: str) -> str:
             return stem[len(prefix) :].strip("_")
     return ""
 
-
 def discover_input_files(base_dir: Path):
-    """Finds ATC target files in base_dir."""
+    """Finds ATC target files and optional flight telemetry in base_dir."""
     atc_files = sorted(list(base_dir.glob("atc_events*.csv")))
 
     if not atc_files:
@@ -42,11 +41,23 @@ def discover_input_files(base_dir: Path):
     atc_path = atc_files[0]
     ts_suffix = extract_timestamp_suffix(atc_path.name)
 
+    # Search for matching telemetry file for 30-second bank analysis
+    telem_files = sorted(list(base_dir.glob("flight_telemetry*.csv")))
+    telem_path = None
+    if telem_files:
+        if ts_suffix:
+            matched = [f for f in telem_files if ts_suffix in f.name]
+            telem_path = matched[0] if matched else telem_files[0]
+        else:
+            telem_path = telem_files[0]
+
     print(f" Found ATC File        : {atc_path.name}")
+    if telem_path:
+        print(f" Found Telemetry File  : {telem_path.name}")
     if ts_suffix:
         print(f" Detected Session Tag : {ts_suffix}")
 
-    return atc_path, ts_suffix
+    return atc_path, telem_path, ts_suffix
 
 
 def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
