@@ -29,6 +29,7 @@ def extract_timestamp_suffix(filename: str) -> str:
             return stem[len(prefix) :].strip("_")
     return ""
 
+
 def discover_input_files(base_dir: Path):
     """Finds ATC target files and optional flight telemetry in base_dir."""
     atc_files = sorted(list(base_dir.glob("atc_events*.csv")))
@@ -226,6 +227,52 @@ class ReferenceTrajectoryGenerator:
                 hdg_diff = -((curr_hdg - target_hdg) % 360.0)
             else:
                 hdg_diff = hdg_diff_shortest
+
+            curr_turn_rate = (
+                (curr_bank / self.max_bank) * self.turn_rate
+                if self.max_bank > 0
+                else 0.0
+            )
+            roll_time = (
+                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0.0
+            )
+            lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
+
+            if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
+                curr_hdg = target_hdg
+                desired_bank = 0.0
+            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
+                hdg_diff
+            ) == np.sign(curr_bank):
+                # Turn rollout point reached
+                desired_bank = 0.0
+            else:
+                bank_dir = np.sign(hdg_diff) if hdg_diff != 0.0 else 0.0
+                desired_bank = bank_dir * self.max_bank
+
+            bank_err = desired_bank - curr_bank
+            max_bank_change = self.roll_rate * dt
+            curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
+
+            actual_turn_rate = (
+                (curr_bank / self.max_bank) * self.turn_rate
+                if self.max_bank > 0
+                else 0.0
+            )
+            curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
+
+            # VSI & Altitude Kinematics
+            alt_diff = target_alt - curr_alt
+            lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
+
+            if abs(alt_diff) <= 1.0 and abs(curr_vsi) <= 10.0:
+                curr_alt = target_alt
+                desired_vsi = 0.0
+            elif abs(alt_diff) <= lead_alt + 5.0 and (alt_diff * curr_vsi > 0):
+                desired_vsi = 0.0
+            else:
+                vsi_dir = np.sign(alt_diff) if alt_diff != 0 else 0.0
+                desired_vsi = vsi_dir * abs(target_vsi)
 
             vsi_err = desired_vsi - curr_vsi
             vsi_scale = max(abs(curr_vsi), abs(target_vsi), 1000.0)
