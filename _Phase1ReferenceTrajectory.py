@@ -261,13 +261,15 @@ if __name__ == "__main__":
             Path(__file__).parent if "__file__" in locals() else Path.cwd()
         )
 
-        atc_path, ts_suffix = discover_input_files(work_dir)
+        atc_path, telem_path, ts_suffix = discover_input_files(work_dir)
 
         atc_df = pd.read_csv(atc_path)
         atc_df["Timestamp"] = pd.to_datetime(atc_df["Timestamp"])
 
+        telem_df = pd.read_csv(telem_path) if telem_path else None
+
         generator = ReferenceTrajectoryGenerator()
-        ref_traj_df = generator.generate_trajectory(atc_df)
+        ref_traj_df = generator.generate_trajectory(atc_df, telem_df=telem_df)
 
         # Save to parent directory matching input session timestamp
         parent_dir = atc_path.parent
