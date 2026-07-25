@@ -217,27 +217,27 @@ def generate_pilot_controls(df, ts_str, output_dir: Path):
 # -------------------------------------------------------------------------
 def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     seg_df = sc_df[sc_df['Phase_Segment'] != 'Overall Flight'].copy()
-    
-    # Calculate Session Averages & KPIs
+
+    # Session RMSE and envelope tolerance (calculated directly from time-series)
+    # Compute true pooled session RMSE directly across all aligned datapoints
+    sess_rmse_alt = float(np.sqrt(np.mean(aln_df['Alt_Err'] ** 2)))
+    sess_rmse_vsi = float(np.sqrt(np.mean(aln_df['VSI_Err'] ** 2)))
+    sess_rmse_hdg = float(np.sqrt(np.mean(aln_df['Hdg_Err'] ** 2)))
+
+    # Compute true pooled fine tolerance percentages across all datapoints
+    TOL_FINE = {'Hdg': 2.0, 'Bank': 3.0, 'Alt': 50.0}
+    sess_tol_alt = float((np.abs(aln_df['Alt_Err']) <= TOL_FINE['Alt']).mean() * 100.0)
+    sess_tol_hdg = float((np.abs(aln_df['Hdg_Err']) <= TOL_FINE['Hdg']).mean() * 100.0)
+    sess_tol_bnk = float((np.abs(aln_df['Bank_Err']) <= TOL_FINE['Bank']).mean() * 100.0)
+
+    # Retrieve event-based indicators (Spikes & Ripple Time) from overall scorecard row
     overall_row = sc_df[sc_df['Phase_Segment'] == 'Overall Flight']
     if not overall_row.empty:
-        sess_rmse_alt  = overall_row['RMSE_Alt_Ft'].values[0]
-        sess_rmse_vsi  = overall_row['RMSE_VSI_FPM'].values[0]
-        sess_rmse_hdg  = overall_row['RMSE_Hdg_Deg'].values[0]
-        sess_tol_alt   = overall_row['Alt_In_Fine_Pct'].values[0]
-        sess_tol_hdg   = overall_row['Hdg_In_Fine_Pct'].values[0]
-        sess_tol_bnk   = overall_row['Bank_In_Fine_Pct'].values[0]
-        spikes_val     = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 1
-        ripple_val     = overall_row['Ripple_Time'].values[0] if 'Ripple_Time' in overall_row else 1.8
+        spikes_val = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 0
+        ripple_val = float(overall_row['Ripple_Time'].values[0]) if 'Ripple_Time' in overall_row else 0.0
     else:
-        sess_rmse_alt  = seg_df['RMSE_Alt_Ft'].mean()
-        sess_rmse_vsi  = seg_df['RMSE_VSI_FPM'].mean()
-        sess_rmse_hdg  = seg_df['RMSE_Hdg_Deg'].mean()
-        sess_tol_alt   = seg_df['Alt_In_Fine_Pct'].mean()
-        sess_tol_hdg   = seg_df['Hdg_In_Fine_Pct'].mean()
-        sess_tol_bnk   = seg_df['Bank_In_Fine_Pct'].mean()
-        spikes_val     = 1
-        ripple_val     = 1.8
+        spikes_val = 0
+        ripple_val = 0.0
 
     # Overall Session Envelope ToL (Average across dimensions)
     sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
