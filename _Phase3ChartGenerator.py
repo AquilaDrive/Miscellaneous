@@ -121,10 +121,14 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
 
-    # Heading (Continuous Unwrapped Logic & Repeating 0-360 Axis Labels)
-
+    # Heading
     unwrapped_hdg = unwrap_degrees(df['Heading'])
     unwrapped_ref_hdg = unwrap_degrees(df['Ref_Hdg'])
+
+    # Eliminate modulo-360 offset between actual and reference heading baselines
+    if len(unwrapped_hdg) > 0 and len(unwrapped_ref_hdg) > 0:
+        offset_360 = np.round(np.nanmean(unwrapped_hdg - unwrapped_ref_hdg) / 360.0) * 360.0
+        unwrapped_hdg -= offset_360
 
     axes[1].plot(df['Time_Min'], unwrapped_hdg, label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
     axes[1].plot(df['Time_Min'], unwrapped_ref_hdg, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
