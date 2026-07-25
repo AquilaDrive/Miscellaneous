@@ -154,7 +154,7 @@ class ReferenceTrajectoryGenerator:
 
         return "AUTO"
 
-def generate_trajectory(
+    def generate_trajectory(
         self,
         atc_df: pd.DataFrame,
         telem_df: pd.DataFrame = None,
