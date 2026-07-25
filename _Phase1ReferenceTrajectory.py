@@ -134,9 +134,13 @@ class ReferenceTrajectoryGenerator:
         target_alt = curr_alt
         target_vsi = 0.0
 
+        # --- MANEUVER STATE & HYSTERESIS TRACKING ---
+        latched_turn_dir = 0  # +1: Right turn, -1: Left turn, 0: Steady On-Course
+
         for i in range(n):
             t_curr = timestamps[i]
 
+            new_atc_event = False
             while (
                 event_idx < num_events
                 and t_curr >= atc_df.loc[event_idx, "Timestamp"]
@@ -146,54 +150,70 @@ class ReferenceTrajectoryGenerator:
                     "INIT_STATE",
                     "ATC_TARGET",
                 ]:
-                    target_hdg = float(ev["Target_Hdg"])
+                    new_target_hdg = float(ev["Target_Hdg"])
+                    if new_target_hdg != target_hdg:
+                        target_hdg = new_target_hdg
+                        new_atc_event = True
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
                 event_idx += 1
 
             # -------------------------------------------------------------
-            # Bank & Heading Kinematics (Corrected Bank Conventions)
+            # Bank & Heading Kinematics (LATCHED HYSTERESIS LOGIC)
             # -------------------------------------------------------------
-            # Shortest angular distance (-180 to +180 deg)
-            # Positive hdg_diff = Right Turn (Heading increases)
-            # Negative hdg_diff = Left Turn (Heading decreases)
-            hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
+            # Compute raw shortest angular offset (-180 to +180 deg)
+            raw_diff = (target_hdg - curr_hdg + 180) % 360 - 180
 
+            # Latch turn direction on new target or when transitioning out of steady flight
+            if new_atc_event or (latched_turn_dir == 0 and abs(raw_diff) > 0.1):
+                # Physical Roll Inertia Preference: If currently banked (>1.0°),
+                # preserve existing roll direction when turn angle is ambiguous (~180°)
+                if abs(curr_bank) > 1.0 and abs(abs(raw_diff) - 180.0) < 30.0:
+                    latched_turn_dir = int(np.sign(curr_bank))
+                else:
+                    latched_turn_dir = int(np.sign(raw_diff)) if raw_diff != 0 else 1
+
+            # Monotonic remaining distance calculation using latched turn direction
+            if latched_turn_dir > 0:
+                # Right turn: heading increases monotonically towards target
+                remaining_hdg_diff = (target_hdg - curr_hdg) % 360.0
+            elif latched_turn_dir < 0:
+                # Left turn: heading decreases monotonically towards target
+                remaining_hdg_diff = -((curr_hdg - target_hdg) % 360.0)
+            else:
+                remaining_hdg_diff = 0.0
+
+            # Dynamic rollout lead angle based on current bank state
             curr_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0
+                else 0.0
             )
             roll_time = (
-                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0
+                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0.0
             )
             lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
 
-            if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
+            # Turn Execution State Machine
+            if abs(remaining_hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
                 curr_hdg = target_hdg
                 desired_bank = 0.0
-            # Check rollout condition: bank direction matches heading turn direction
-            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and (
-                (hdg_diff > 0 and curr_bank > 0) or (hdg_diff < 0 and curr_bank < 0)
-            ):
-                desired_bank = 0.0
+                latched_turn_dir = 0  # Turn completed; release latch
+            elif abs(remaining_hdg_diff) <= lead_hdg_angle + 0.2:
+                desired_bank = 0.0  # Rollout lead reached; return bank to wings-level
             else:
-                # Right Turn (hdg_diff > 0) -> Positive Bank (+max_bank)
-                # Left Turn  (hdg_diff < 0) -> Negative Bank (-max_bank)
-                bank_dir = np.sign(hdg_diff) if hdg_diff != 0 else 1.0
-                desired_bank = bank_dir * self.max_bank
+                desired_bank = latched_turn_dir * self.max_bank
 
             # Smoothly transition current bank angle towards desired bank angle
             bank_err = desired_bank - curr_bank
             max_bank_change = self.roll_rate * dt
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
-            # Turn Rate Dynamics:
-            # Positive bank (+curr_bank) increases heading (+turn_rate)
+            # Integrate actual reference heading
             actual_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
-                else 0
+                else 0.0
             )
             curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
 
