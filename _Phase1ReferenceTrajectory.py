@@ -227,6 +227,30 @@ class ReferenceTrajectoryGenerator:
             else:
                 hdg_diff = hdg_diff_shortest
 
+            vsi_err = desired_vsi - curr_vsi
+            vsi_scale = max(abs(curr_vsi), abs(target_vsi), 1000.0)
+            max_vsi_change = (
+                vsi_scale / max(self.vsi_ramp_time, 0.1)
+            ) * dt
+            curr_vsi += np.clip(vsi_err, -max_vsi_change, max_vsi_change)
+
+            curr_alt += (curr_vsi / 60.0) * dt
+
+            ref_hdg[i] = curr_hdg
+            ref_bank[i] = curr_bank
+            ref_alt[i] = curr_alt
+            ref_vsi[i] = curr_vsi
+
+        return pd.DataFrame(
+            {
+                "Timestamp": timestamps,
+                "Ref_Hdg": np.round(ref_hdg, 2),
+                "Ref_Bank": np.round(ref_bank, 2),
+                "Ref_Alt": np.round(ref_alt, 2),
+                "Ref_VSI": np.round(ref_vsi, 2),
+            }
+        )
+
 
 # ==========================================
 # 3. RUN PIPELINE & TERMINAL HOLD
