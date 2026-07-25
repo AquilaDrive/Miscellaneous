@@ -66,9 +66,16 @@ def format_altitude_speech(alt):
 
 
 def format_vsi_speech(vsi):
-    if vsi >= 1000:
-        return f"{ICAO_DIGITS[str(vsi // 1000)]} thousand"
-    return f"{ICAO_DIGITS[str(vsi // 100)]} hundred"
+    thousands = vsi // 1000
+    hundreds = (vsi % 1000) // 100
+    parts = []
+
+    if thousands > 0:
+        parts.append(f"{ICAO_DIGITS[str(thousands)]} thousand")
+    if hundreds > 0:
+        parts.append(f"{ICAO_DIGITS[str(hundreds)]} hundred")
+
+    return " ".join(parts)
 
 
 def generate_target(current_hdg, current_alt):
