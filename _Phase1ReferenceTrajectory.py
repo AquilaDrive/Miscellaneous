@@ -111,11 +111,58 @@ class ReferenceTrajectoryGenerator:
         self.turn_rate = turn_rate  # deg/s (standard rate turn)
         self.vsi_ramp_time = vsi_ramp_time  # sec
 
+    def _determine_turn_direction(
+        self, telem_df: pd.DataFrame, t_start: pd.Timestamp, window_sec: float = 30.0
+    ) -> str:
+        """Analyzes pilot telemetry over a 30s window following an ATC command to infer intended turn direction."""
+        if telem_df is None or telem_df.empty or "Timestamp" not in telem_df.columns:
+            return "AUTO"
+
+        bank_col = None
+        lower_cols = {str(col).lower().strip(): col for col in telem_df.columns}
+        for opt in ["bank", "bank_deg", "plane_bank", "bank_angle", "roll", "roll_deg", "plane_roll"]:
+            if opt in lower_cols:
+                bank_col = lower_cols[opt]
+                break
+
+        if not bank_col:
+            return "AUTO"
+
+        t_end = t_start + pd.Timedelta(seconds=window_sec)
+        mask = (telem_df["Timestamp"] >= t_start) & (telem_df["Timestamp"] <= t_end)
+        window = telem_df.loc[mask]
+
+        if window.empty:
+            return "AUTO"
+
+        raw_bank = pd.to_numeric(window[bank_col], errors="coerce").dropna().values
+        if len(raw_bank) == 0:
+            return "AUTO"
+
+        # Align raw telemetry bank sign (+ = Right bank, - = Left bank)
+        aligned_bank = -1.0 * raw_bank if bank_col != "Bank" else raw_bank
+        active_bank = aligned_bank[np.abs(aligned_bank) > 2.0]
+
+        if len(active_bank) == 0:
+            return "AUTO"
+
+        mean_bank = np.mean(active_bank)
+        if mean_bank > 1.5:
+            return "RIGHT"
+        elif mean_bank < -1.5:
+            return "LEFT"
+
+        return "AUTO"
+
     def generate_trajectory(
-        self, atc_df: pd.DataFrame, dt=0.1, duration_extension=180
+        self, atc_df: pd.DataFrame, telem_df: pd.DataFrame = None, dt=0.1, duration_extension=180
     ) -> pd.DataFrame:
         atc_df = normalize_atc_columns(atc_df)
         atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
+
+        if telem_df is not None:
+            telem_df = telem_df.copy()
+            telem_df["Timestamp"] = pd.to_datetime(telem_df["Timestamp"])
 
         t_start = atc_df["Timestamp"].iloc[0]
         t_end = atc_df["Timestamp"].iloc[-1] + pd.Timedelta(
@@ -144,6 +191,7 @@ class ReferenceTrajectoryGenerator:
         target_hdg = curr_hdg
         target_alt = curr_alt
         target_vsi = 0.0
+        forced_turn_dir = "AUTO"
 
         for i in range(n):
             t_curr = timestamps[i]
@@ -160,86 +208,24 @@ class ReferenceTrajectoryGenerator:
                     target_hdg = float(ev["Target_Hdg"])
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
+                    forced_turn_dir = self._determine_turn_direction(
+                        telem_df, ev["Timestamp"], window_sec=30.0
+                    )
                 event_idx += 1
 
             # ----------------------------------------------------
-            # BANK & HEADING KINEMATICS (AVIATION STANDARD SIGN CONVENTION)
+            # BANK & HEADING KINEMATICS (TELEMETRY-AWARE TURN DIRECTION)
             # Right Turn: hdg_diff > 0 -> POSITIVE Bank (+max_bank)
             # Left Turn : hdg_diff < 0 -> NEGATIVE Bank (-max_bank)
             # ----------------------------------------------------
-            hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
-            
-            curr_turn_rate = (
-                (curr_bank / self.max_bank) * self.turn_rate
-                if self.max_bank > 0
-                else 0.0
-            )
-            roll_time = (
-                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0.0
-            )
-            lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
+            hdg_diff_shortest = (target_hdg - curr_hdg + 180) % 360 - 180
 
-            if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
-                curr_hdg = target_hdg
-                desired_bank = 0.0
-            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
-                hdg_diff
-            ) == np.sign(curr_bank):
-                # Turn rollout point reached
-                desired_bank = 0.0
+            if forced_turn_dir == "RIGHT" and hdg_diff_shortest < 0 and abs(hdg_diff_shortest) > 90.0:
+                hdg_diff = (target_hdg - curr_hdg) % 360.0
+            elif forced_turn_dir == "LEFT" and hdg_diff_shortest > 0 and abs(hdg_diff_shortest) > 90.0:
+                hdg_diff = -((curr_hdg - target_hdg) % 360.0)
             else:
-                # Enforce Aviation Standard: +hdg_diff (Right Turn) -> +desired_bank
-                bank_dir = np.sign(hdg_diff) if hdg_diff != 0.0 else 0.0
-                desired_bank = bank_dir * self.max_bank
-
-            bank_err = desired_bank - curr_bank
-            max_bank_change = self.roll_rate * dt
-            curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
-
-            # Positive bank produces positive turn rate (increasing heading clockwise)
-            actual_turn_rate = (
-                (curr_bank / self.max_bank) * self.turn_rate
-                if self.max_bank > 0
-                else 0.0
-            )
-            curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
-
-            # VSI & Altitude Kinematics
-            alt_diff = target_alt - curr_alt
-            lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
-
-            if abs(alt_diff) <= 1.0 and abs(curr_vsi) <= 10.0:
-                curr_alt = target_alt
-                desired_vsi = 0.0
-            elif abs(alt_diff) <= lead_alt + 5.0 and (alt_diff * curr_vsi > 0):
-                desired_vsi = 0.0
-            else:
-                vsi_dir = np.sign(alt_diff) if alt_diff != 0 else 0.0
-                desired_vsi = vsi_dir * abs(target_vsi)
-
-            vsi_err = desired_vsi - curr_vsi
-            vsi_scale = max(abs(curr_vsi), abs(target_vsi), 1000.0)
-            max_vsi_change = (
-                vsi_scale / max(self.vsi_ramp_time, 0.1)
-            ) * dt
-            curr_vsi += np.clip(vsi_err, -max_vsi_change, max_vsi_change)
-
-            curr_alt += (curr_vsi / 60.0) * dt
-
-            ref_hdg[i] = curr_hdg
-            ref_bank[i] = curr_bank
-            ref_alt[i] = curr_alt
-            ref_vsi[i] = curr_vsi
-
-        return pd.DataFrame(
-            {
-                "Timestamp": timestamps,
-                "Ref_Hdg": np.round(ref_hdg, 2),
-                "Ref_Bank": np.round(ref_bank, 2),
-                "Ref_Alt": np.round(ref_alt, 2),
-                "Ref_VSI": np.round(ref_vsi, 2),
-            }
-        )
+                hdg_diff = hdg_diff_shortest
 
 
 # ==========================================
