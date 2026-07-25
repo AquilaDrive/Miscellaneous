@@ -165,6 +165,23 @@ class FlightPerformanceAnalyzer:
         is_paused = (telem_df[telemetry_vars].diff().abs().sum(axis=1) == 0)
         telem_df = telem_df[~is_paused].reset_index(drop=True)
 
+        # Short Til Segment Trim (< 60 SECONDS)
+        atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
+        
+        while len(atc_df) > 0:
+            last_seg_start = atc_df["Timestamp"].iloc[-1]
+            telem_end = telem_df["Timestamp"].max()
+            last_seg_duration = (telem_end - last_seg_start).total_seconds()
+
+            if last_seg_duration < 60.0:
+                # Discard last segment log entry
+                atc_df = atc_df.iloc[:-1].reset_index(drop=True)
+                # Cut telemetry and reference data prior to the dropped segment's start time
+                telem_df = telem_df[telem_df["Timestamp"] < last_seg_start].reset_index(drop=True)
+                ref_df = ref_df[ref_df["Timestamp"] < last_seg_start].reset_index(drop=True)
+            else:
+                break
+
         # Time-alignment via merge_asof
         merged = pd.merge_asof(
             telem_df.sort_values("Timestamp"),
