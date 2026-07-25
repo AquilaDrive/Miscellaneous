@@ -134,13 +134,9 @@ class ReferenceTrajectoryGenerator:
         target_alt = curr_alt
         target_vsi = 0.0
 
-        # --- MANEUVER STATE & HYSTERESIS TRACKING ---
-        latched_turn_dir = 0  # +1: Right turn, -1: Left turn, 0: Steady On-Course
-
         for i in range(n):
             t_curr = timestamps[i]
 
-            new_atc_event = False
             while (
                 event_idx < num_events
                 and t_curr >= atc_df.loc[event_idx, "Timestamp"]
@@ -150,40 +146,18 @@ class ReferenceTrajectoryGenerator:
                     "INIT_STATE",
                     "ATC_TARGET",
                 ]:
-                    new_target_hdg = float(ev["Target_Hdg"])
-                    if new_target_hdg != target_hdg:
-                        target_hdg = new_target_hdg
-                        new_atc_event = True
+                    target_hdg = float(ev["Target_Hdg"])
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
                 event_idx += 1
 
-            # -------------------------------------------------------------
-            # Bank & Heading Kinematics (LATCHED HYSTERESIS LOGIC)
-            # -------------------------------------------------------------
-            # Compute raw shortest angular offset (-180 to +180 deg)
-            raw_diff = (target_hdg - curr_hdg + 180) % 360 - 180
-
-            # Latch turn direction on new target or when transitioning out of steady flight
-            if new_atc_event or (latched_turn_dir == 0 and abs(raw_diff) > 0.1):
-                # Physical Roll Inertia Preference: If currently banked (>1.0°),
-                # preserve existing roll direction when turn angle is ambiguous (~180°)
-                if abs(curr_bank) > 1.0 and abs(abs(raw_diff) - 180.0) < 30.0:
-                    latched_turn_dir = int(np.sign(curr_bank))
-                else:
-                    latched_turn_dir = int(np.sign(raw_diff)) if raw_diff != 0 else 1
-
-            # Monotonic remaining distance calculation using latched turn direction
-            if latched_turn_dir > 0:
-                # Right turn: heading increases monotonically towards target
-                remaining_hdg_diff = (target_hdg - curr_hdg) % 360.0
-            elif latched_turn_dir < 0:
-                # Left turn: heading decreases monotonically towards target
-                remaining_hdg_diff = -((curr_hdg - target_hdg) % 360.0)
-            else:
-                remaining_hdg_diff = 0.0
-
-            # Dynamic rollout lead angle based on current bank state
+            # ----------------------------------------------------
+            # BANK & HEADING KINEMATICS (AVIATION STANDARD SIGN CONVENTION)
+            # Right Turn: hdg_diff > 0 -> POSITIVE Bank (+max_bank)
+            # Left Turn : hdg_diff < 0 -> NEGATIVE Bank (-max_bank)
+            # ----------------------------------------------------
+            hdg_diff = (target_hdg - curr_hdg + 180) % 360 - 180
+            
             curr_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
@@ -194,22 +168,24 @@ class ReferenceTrajectoryGenerator:
             )
             lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
 
-            # Turn Execution State Machine
-            if abs(remaining_hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
+            if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
                 curr_hdg = target_hdg
                 desired_bank = 0.0
-                latched_turn_dir = 0  # Turn completed; release latch
-            elif abs(remaining_hdg_diff) <= lead_hdg_angle + 0.2:
-                desired_bank = 0.0  # Rollout lead reached; return bank to wings-level
+            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and np.sign(
+                hdg_diff
+            ) == np.sign(curr_bank):
+                # Turn rollout point reached
+                desired_bank = 0.0
             else:
-                desired_bank = latched_turn_dir * self.max_bank
+                # Enforce Aviation Standard: +hdg_diff (Right Turn) -> +desired_bank
+                bank_dir = np.sign(hdg_diff) if hdg_diff != 0.0 else 0.0
+                desired_bank = bank_dir * self.max_bank
 
-            # Smoothly transition current bank angle towards desired bank angle
             bank_err = desired_bank - curr_bank
             max_bank_change = self.roll_rate * dt
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
-            # Integrate actual reference heading
+            # Positive bank produces positive turn rate (increasing heading clockwise)
             actual_turn_rate = (
                 (curr_bank / self.max_bank) * self.turn_rate
                 if self.max_bank > 0
@@ -217,9 +193,7 @@ class ReferenceTrajectoryGenerator:
             )
             curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
 
-            # -------------------------------------------------------------
             # VSI & Altitude Kinematics
-            # -------------------------------------------------------------
             alt_diff = target_alt - curr_alt
             lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
 
