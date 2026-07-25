@@ -269,7 +269,7 @@ class FlightPerformanceAnalyzer:
 
         return {
             "Phase_Segment": label,
-            "Duration_Sec": round((df["Timestamp"].iloc[-1] - df["Timestamp"].iloc[0]).total_seconds(), 1),
+            "Duration_Sec": round(df["Timestamp"].diff().dt.total_seconds().clip(upper=1.0).sum(), 1),
             "RMSE_Hdg_Deg": round(rmse_hdg, 2),
             "RMSE_Bank_Deg": round(rmse_bank, 2),
             "RMSE_Alt_Ft": round(rmse_alt, 2),
