@@ -29,6 +29,8 @@ ICAO_DIGITS = {
     "9": "niner",
 }
 
+GEMINI_TRIGGER_PHRASE = "Gemini, initiate a high-load logistics scenario now."
+
 
 def speak(text):
     print(f"\n[ATC TRANSMISSION] {text}")
@@ -64,9 +66,16 @@ def format_altitude_speech(alt):
 
 
 def format_vsi_speech(vsi):
-    if vsi >= 1000:
-        return f"{ICAO_DIGITS[str(vsi // 1000)]} thousand"
-    return f"{ICAO_DIGITS[str(vsi // 100)]} hundred"
+    thousands = vsi // 1000
+    hundreds = (vsi % 1000) // 100
+    parts = []
+
+    if thousands > 0:
+        parts.append(f"{ICAO_DIGITS[str(thousands)]} thousand")
+    if hundreds > 0:
+        parts.append(f"{ICAO_DIGITS[str(hundreds)]} hundred")
+
+    return " ".join(parts)
 
 
 def generate_target(current_hdg, current_alt):
@@ -209,11 +218,35 @@ def main():
                 )
                 speak(command)
 
-                # 3. Sleep WHILE you perform the maneuver
-                print(
-                    f"\n[MANEUVER IN PROGRESS] Next vector in {wait_time} seconds..."
-                )
-                time.sleep(wait_time)
+                # 3. Sleep WHILE performing maneuver (trigger Gemini in 1st half if > 60s)
+                if wait_time > 60:
+                    delay_before_distraction = random.uniform(10, wait_time / 2)
+                    time.sleep(delay_before_distraction)
+
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                    log_event(
+                        csv_writer,
+                        csv_file,
+                        log_file,
+                        now_str,
+                        "GEMINI_AMBUSH",
+                        current_hdg,
+                        current_alt,
+                        0,
+                        GEMINI_TRIGGER_PHRASE,
+                    )
+                    speak(GEMINI_TRIGGER_PHRASE)
+
+                    remaining_wait = wait_time - delay_before_distraction
+                    print(
+                        f"\n[MANEUVER IN PROGRESS] Next vector in {remaining_wait:.1f} seconds..."
+                    )
+                    time.sleep(remaining_wait)
+                else:
+                    print(
+                        f"\n[MANEUVER IN PROGRESS] Next vector in {wait_time} seconds..."
+                    )
+                    time.sleep(wait_time)
 
         except KeyboardInterrupt:
             print("\n\n[SESSION TERMINATED]")
