@@ -135,7 +135,7 @@ def log_event(
 
 def main():
     print("==========================================")
-    print("   ICAO ATC Target Generator + Logging")
+    print("   ICAO ATC Target Generator  + Gemini Distraction Generator Summons + Logging")
     print("==========================================")
 
     current_alt = 16500
