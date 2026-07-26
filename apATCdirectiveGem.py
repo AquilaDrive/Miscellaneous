@@ -29,11 +29,9 @@ ICAO_DIGITS = {
     "9": "niner",
 }
 
-GEMINI_TRIGGER_PHRASE = "Gemini, initiate a high-load logistics scenario now."
-
 
 def speak(text):
-    print(f"\n[TTS TRANSMISSION] {text}")
+    print(f"\n[ATC TRANSMISSION] {text}")
     try:
         engine = pyttsx3.init()
         engine.setProperty("rate", 160)
@@ -128,7 +126,7 @@ def log_event(
 
 def main():
     print("==========================================")
-    print(" ICAO Target + Gemini Interrogator + Log")
+    print("   ICAO ATC Target Generator + Logging")
     print("==========================================")
 
     current_alt = 16500
@@ -152,12 +150,6 @@ def main():
     ]
     log_header = f"{'Timestamp':<23} | {'Event_Type':<12} | {'Hdg':>3} | {'Alt (ft)':>8} | {'VSI (fpm)':>8} | Command Spoken\n"
     log_divider = "-" * 110 + "\n"
-
-    target_wait = 15  # First vector arrives 15s after startup
-    gemini_interval = random.randint(120, 240)
-
-    last_target_time = time.time()
-    last_gemini_time = time.time()
 
     with open(csv_filename, mode="w", newline="", buffering=1) as csv_file, open(
         log_filename, mode="w", buffering=1
@@ -188,59 +180,40 @@ def main():
         )
         speak(init_msg)
 
+        # Fixed 15-second standby buffer before first command
+        INITIAL_STANDBY_SEC = 15
+        print(
+            f"\n[STANDBY] First ATC vector in {INITIAL_STANDBY_SEC} seconds..."
+        )
+        time.sleep(INITIAL_STANDBY_SEC)
+
         try:
             while True:
-                now_time = time.time()
+                # 1. Generate target
+                command, current_hdg, current_alt, vsi, wait_time = (
+                    generate_target(current_hdg, current_alt)
+                )
 
-                # 1. Trigger Gemini Ambush
-                if now_time - last_gemini_time >= gemini_interval:
-                    print("\n[!!! TRIGGERING GEMINI INTERROGATION !!!]")
+                # 2. Log & Speak IMMEDIATELY
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                log_event(
+                    csv_writer,
+                    csv_file,
+                    log_file,
+                    now,
+                    "ATC_TARGET",
+                    current_hdg,
+                    current_alt,
+                    vsi,
+                    command,
+                )
+                speak(command)
 
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[
-                        :-3
-                    ]
-                    log_event(
-                        csv_writer,
-                        csv_file,
-                        log_file,
-                        now_str,
-                        "GEMINI_AMBUSH",
-                        current_hdg,
-                        current_alt,
-                        0,
-                        GEMINI_TRIGGER_PHRASE,
-                    )
-                    speak(GEMINI_TRIGGER_PHRASE)
-
-                    last_gemini_time = time.time()
-                    gemini_interval = random.randint(120, 240)
-                    last_target_time = time.time() + 15
-
-                # 2. Issue Standard ICAO ATC Vector
-                elif now_time - last_target_time >= target_wait:
-                    command, current_hdg, current_alt, vsi, target_wait = (
-                        generate_target(current_hdg, current_alt)
-                    )
-
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[
-                        :-3
-                    ]
-                    log_event(
-                        csv_writer,
-                        csv_file,
-                        log_file,
-                        now_str,
-                        "ATC_TARGET",
-                        current_hdg,
-                        current_alt,
-                        vsi,
-                        command,
-                    )
-                    speak(command)
-
-                    last_target_time = time.time()
-
-                time.sleep(1)
+                # 3. Sleep WHILE you perform the maneuver
+                print(
+                    f"\n[MANEUVER IN PROGRESS] Next vector in {wait_time} seconds..."
+                )
+                time.sleep(wait_time)
 
         except KeyboardInterrupt:
             print("\n\n[SESSION TERMINATED]")
