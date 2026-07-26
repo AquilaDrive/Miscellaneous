@@ -29,7 +29,7 @@ ICAO_DIGITS = {
     "9": "niner",
 }
 
-GEMINI_TRIGGER_PHRASE = "Gemini, initiate a high-load logistics scenario now."
+GEMINI_TRIGGER_PHRASE = "Gemini, initiate the distraction"
 
 
 def speak(text):
