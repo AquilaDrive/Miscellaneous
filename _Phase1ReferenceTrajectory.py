@@ -296,7 +296,7 @@ class ReferenceTrajectoryGenerator:
             lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
 
             if abs(alt_diff) <= 0.1 and abs(curr_vsi) <= 10.0:
-                curr_vsi = 0.0
+                curr_alt = target_alt
                 desired_vsi = 0.0
             elif abs(alt_diff) <= lead_alt + 5.0 and (alt_diff * curr_vsi > 0):
                 # Smooth parabolic descent/climb ramp during altitude capture
