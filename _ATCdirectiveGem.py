@@ -116,7 +116,13 @@ def generate_target(current_hdg, current_alt):
         alt_cmd = f"maintain level flight at {alt_speech} feet."
         transit_time = random.randint(35, 65)
 
-    turn_time = int(hdg_diff / 3.0) + random.randint(10, 20)
+    avg_alt_ft = (current_alt + new_alt) / 2.0
+    alt_k = round(avg_alt_ft / 1000.0)
+    vtas = 300.0 * (1.0 + 0.02 * alt_k)
+    turn_rate_30 = 629.89 / vtas
+    roll_time = 30.0 / 5.0  # 6.0s roll entry/exit buffer at 5 deg/s roll rate
+
+    turn_time = int((hdg_diff / turn_rate_30) + roll_time) + random.randint(10, 20)
     required_wait = max(transit_time, turn_time, 35)
 
     command_text = f"Fly heading {hdg_speech}, {alt_cmd}"
