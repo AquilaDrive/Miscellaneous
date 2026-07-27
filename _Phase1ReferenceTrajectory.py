@@ -232,7 +232,7 @@ class ReferenceTrajectoryGenerator:
                 event_idx += 1
 
             # -------------------------------------------------------------
-            # Bank & Heading Kinematics (Telemetry-Aware Direction Override)
+            # Bank & Heading Kinematics
             # -------------------------------------------------------------
             # Shortest angular distance (-180 to +180 deg)
             hdg_diff_shortest = (target_hdg - curr_hdg + 180) % 360 - 180
@@ -253,46 +253,36 @@ class ReferenceTrajectoryGenerator:
             else:
                 hdg_diff = hdg_diff_shortest
 
-            if self.max_bank > 0 and abs(curr_bank) > 0.01:
-                curr_turn_rate = active_turn_rate * (
-                    np.tan(np.radians(curr_bank)) / np.tan(np.radians(self.max_bank))
-                )
-            else:
-                curr_turn_rate = 0.0
-            
-            roll_time = (
-                abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0
-            )
-            lead_hdg_angle = 0.5 * abs(curr_turn_rate) * roll_time
+            # Calculate turn rate at max bank for current continuous altitude
+            max_turn_rate = self.calculate_turn_rate(curr_alt, self.max_bank)
+
+            # Roll-out lead angle: At 5 deg/s roll rate, rolling out from max_bank takes (max_bank / roll_rate) sec.
+            # Average turn rate during linear roll-out phase is 0.5 * max_turn_rate.
+            rollout_time = self.max_bank / self.roll_rate if self.roll_rate > 0 else 0.0
+            lead_hdg_angle = 0.5 * max_turn_rate * rollout_time
 
             if abs(hdg_diff) <= 0.1 and abs(curr_bank) <= 0.1:
                 curr_hdg = target_hdg
                 desired_bank = 0.0
-            # Check rollout condition: bank direction matches heading turn direction
-            elif abs(hdg_diff) <= lead_hdg_angle + 0.2 and (
+            # Initiate rollout when remaining heading matches rollout lead angle
+            elif abs(hdg_diff) <= lead_hdg_angle and (
                 (hdg_diff > 0 and curr_bank > 0)
                 or (hdg_diff < 0 and curr_bank < 0)
             ):
                 desired_bank = 0.0
             else:
-                # Right Turn (hdg_diff > 0) -> Positive Bank (+max_bank)
-                # Left Turn  (hdg_diff < 0) -> Negative Bank (-max_bank)
                 bank_dir = np.sign(hdg_diff) if hdg_diff != 0 else 1.0
                 desired_bank = bank_dir * self.max_bank
 
-            # Smoothly transition current bank angle towards desired bank angle
+            # Smoothly ramp bank angle at self.roll_rate (5.0 deg/s)
             bank_err = desired_bank - curr_bank
             max_bank_change = self.roll_rate * dt
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
-            # Turn Rate Dynamics:
-            if self.max_bank > 0 and abs(curr_bank) > 0.01:
-                actual_turn_rate = active_turn_rate * (
-                    np.tan(np.radians(curr_bank)) / np.tan(np.radians(self.max_bank))
-                )
-            else:
-                actual_turn_rate = 0.0
-            curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
+            # Instantaneous Turn Rate based on exact continuous bank angle and altitude
+            actual_turn_rate = self.calculate_turn_rate(curr_alt, curr_bank)
+            turn_dir = np.sign(curr_bank) if curr_bank != 0 else (np.sign(hdg_diff) if hdg_diff != 0 else 1.0)
+            curr_hdg = (curr_hdg + turn_dir * actual_turn_rate * dt) % 360.0
 
             # -------------------------------------------------------------
             # VSI & Altitude Kinematics
