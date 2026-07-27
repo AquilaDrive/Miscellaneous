@@ -254,9 +254,10 @@ class FlightPerformanceAnalyzer:
             np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"]
         ).mean() * 100.0
 
-        # Oscillation Reversal Counts with Deadband Filter
+        # Oscillation Reversal Counts with Deadband Filter and 360-deg wrapping protection
         DEADBAND = 0.2  # deg/s threshold to ignore sensor jitter
-        hdg_rate = np.diff(df["Hdg_Err"].values)
+        raw_hdg_diff = np.diff(df["Hdg_Err"].values)
+        hdg_rate = (raw_hdg_diff + 180) % 360 - 180  # Wrap across boundary
         bank_rate = np.diff(df["Bank_Err"].values)
 
         clean_hdg_rate = np.where(np.abs(hdg_rate) > DEADBAND, hdg_rate, 0.0)
