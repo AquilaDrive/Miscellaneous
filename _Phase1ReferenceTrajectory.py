@@ -51,7 +51,7 @@ def discover_input_files(base_dir: Path):
         else:
             telem_path = telem_files[0]
 
-    print(f" Found ATC File        : {atc_path.name}")
+    print(f" Found ATC File         : {atc_path.name}")
     if telem_path:
         print(f" Found Telemetry File  : {telem_path.name}")
     if ts_suffix:
@@ -104,7 +104,7 @@ def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
 class ReferenceTrajectoryGenerator:
 
     def __init__(
-        self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0, reaction_delay=2.0
+        self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0, reaction_delay=1.5
     ):
         self.max_bank = max_bank  # deg
         self.roll_rate = roll_rate  # deg/s
@@ -207,6 +207,7 @@ class ReferenceTrajectoryGenerator:
         for i in range(n):
             t_curr = timestamps[i]
 
+            # Continuously update reference turn rate based on current altitude
             active_turn_rate = self.calculate_turn_rate(curr_alt)
 
             while (
@@ -369,7 +370,7 @@ if __name__ == "__main__":
         print(" PHASE 1 GENERATION COMPLETE")
         print("==================================================")
         print(f" Reference Output File : {output_filepath.resolve()}")
-        print(f" Total Samples         : {len(ref_traj_df)}")
+        print(f" Total Samples          : {len(ref_traj_df)}")
 
     except Exception as e:
         print("\n==================================================")
