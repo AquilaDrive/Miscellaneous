@@ -248,11 +248,13 @@ class ReferenceTrajectoryGenerator:
             else:
                 hdg_diff = hdg_diff_shortest
 
-            curr_turn_rate = (
-                (curr_bank / self.max_bank) * active_turn_rate
-                if self.max_bank > 0
-                else 0
-            )
+            if self.max_bank > 0 and abs(curr_bank) > 0.01:
+                curr_turn_rate = active_turn_rate * (
+                    np.tan(np.radians(curr_bank)) / np.tan(np.radians(self.max_bank))
+                )
+            else:
+                curr_turn_rate = 0.0
+            
             roll_time = (
                 abs(curr_bank) / self.roll_rate if self.roll_rate > 0 else 0
             )
@@ -279,12 +281,12 @@ class ReferenceTrajectoryGenerator:
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
             # Turn Rate Dynamics:
-            # Positive bank (+curr_bank) increases heading (+turn_rate)
-            actual_turn_rate = (
-                (curr_bank / self.max_bank) * active_turn_rate
-                if self.max_bank > 0
-                else 0
-            )
+            if self.max_bank > 0 and abs(curr_bank) > 0.01:
+                actual_turn_rate = active_turn_rate * (
+                    np.tan(np.radians(curr_bank)) / np.tan(np.radians(self.max_bank))
+                )
+            else:
+                actual_turn_rate = 0.0
             curr_hdg = (curr_hdg + actual_turn_rate * dt) % 360.0
 
             # -------------------------------------------------------------
