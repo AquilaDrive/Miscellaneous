@@ -104,12 +104,13 @@ def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
 class ReferenceTrajectoryGenerator:
 
     def __init__(
-        self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0
+        self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0, reaction_delay=2.0
     ):
         self.max_bank = max_bank  # deg
         self.roll_rate = roll_rate  # deg/s
         self.ias_target = ias_target  # kt target for A/THR
         self.vsi_ramp_time = vsi_ramp_time  # sec
+        self.reaction_delay = reaction_delay  # sec atc-pilot communication latency buffer
 
     def calculate_turn_rate(self, current_alt_ft: float) -> float:
         """Approximates turn rate at 30 deg bank based on IAS target and initiation altitude rounded to 1000 ft."""
@@ -218,7 +219,7 @@ class ReferenceTrajectoryGenerator:
 
             while (
                 event_idx < num_events
-                and t_curr >= atc_df.loc[event_idx, "Timestamp"]
+                and t_curr >= (atc_df.loc[event_idx, "Timestamp"] + pd.Timedelta(seconds=self.reaction_delay))
             ):
                 ev = atc_df.loc[event_idx]
                 if ev.get("Event_Type", "ATC_TARGET") in [
