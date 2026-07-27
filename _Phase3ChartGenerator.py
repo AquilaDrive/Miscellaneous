@@ -373,14 +373,6 @@ if __name__ == '__main__':
             pd.to_datetime(aligned_df['Timestamp']) - pd.to_datetime(aligned_df['Timestamp'].iloc[0])
         ).dt.total_seconds() / 60.0
 
-        # Enforce 30-degree target for bank angle during turns (threshold > 2.5 degrees)
-        turn_threshold = 2.5
-        if 'Ref_Bank' in aligned_df.columns:
-            aligned_df['Ref_Bank'] = np.where(
-                aligned_df['Ref_Bank'] > turn_threshold, 30.0,
-                np.where(aligned_df['Ref_Bank'] < -turn_threshold, -30.0, 0.0)
-            )
-
         # Output charts in parent folder where session CSVs reside
         output_dir = aligned_path.parent
 
