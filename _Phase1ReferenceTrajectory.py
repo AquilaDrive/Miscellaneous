@@ -285,18 +285,19 @@ class ReferenceTrajectoryGenerator:
             curr_hdg = (curr_hdg + turn_dir * actual_turn_rate * dt) % 360.0
 
             # -------------------------------------------------------------
-            # VSI & Altitude Kinematics
+            # VSI & Altitude Kinematics (Standard 10% VSI Capture Lead)
             # -------------------------------------------------------------
             alt_diff = target_alt - curr_alt
-            lead_alt = abs(0.5 * (curr_vsi / 60.0) * self.vsi_ramp_time)
+            # Standard flight lead distance: 10% of current VSI (ft)
+            lead_alt = max(0.10 * abs(curr_vsi), 25.0)
 
             if abs(alt_diff) <= 1.0 and abs(curr_vsi) <= 10.0:
                 curr_alt = target_alt
                 desired_vsi = 0.0
-            elif abs(alt_diff) <= lead_alt + 5.0 and (alt_diff * curr_vsi > 0):
-                # Smooth parabolic descent/climb ramp during altitude capture
+            elif abs(alt_diff) <= lead_alt and (alt_diff * curr_vsi > 0):
+                # Parabolic pitch deceleration during altitude level-off
                 vsi_dir = np.sign(alt_diff)
-                desired_vsi = vsi_dir * abs(target_vsi) * (abs(alt_diff) / max(lead_alt + 5.0, 1.0))
+                desired_vsi = vsi_dir * abs(target_vsi) * (abs(alt_diff) / lead_alt)
             else:
                 vsi_dir = np.sign(alt_diff) if alt_diff != 0 else 0.0
                 desired_vsi = vsi_dir * abs(target_vsi)
