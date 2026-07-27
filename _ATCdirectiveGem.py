@@ -225,7 +225,7 @@ def main():
 
                 # 3. Sleep WHILE performing maneuver (trigger Gemini in 1st half if > 60s)
                 if wait_time > 60:
-                    delay_before_distraction = random.uniform(10, wait_time / 2)
+                    delay_before_distraction = random.uniform(10, wait_time * 0.4)
                     time.sleep(delay_before_distraction)
 
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -237,7 +237,7 @@ def main():
                         "GEMINI_AMBUSH",
                         current_hdg,
                         current_alt,
-                        0,
+                        vsi,
                         GEMINI_TRIGGER_PHRASE,
                     )
                     speak(GEMINI_TRIGGER_PHRASE)
