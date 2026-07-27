@@ -202,7 +202,16 @@ class ReferenceTrajectoryGenerator:
         target_alt = curr_alt
         target_vsi = 0.0
         forced_turn_dir = "AUTO"
-        active_turn_rate = self.calculate_turn_rate(curr_alt)  # Initial turn rate
+        for i in range(n):
+            t_curr = timestamps[i]
+
+            # Continuously update reference turn rate based on current altitude
+            active_turn_rate = self.calculate_turn_rate(curr_alt)
+
+            while (
+                event_idx < num_events
+                and t_curr >= atc_df.loc[event_idx, "Timestamp"]
+            ):
 
         for i in range(n):
             t_curr = timestamps[i]
