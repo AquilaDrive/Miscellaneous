@@ -104,7 +104,7 @@ def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
 class ReferenceTrajectoryGenerator:
 
     def __init__(
-        self, max_bank=25.0, roll_rate=5.0, turn_rate=3.0, vsi_ramp_time=4.0
+        self, max_bank=30.0, roll_rate=5.0, turn_rate=2.15, vsi_ramp_time=4.0
     ):
         self.max_bank = max_bank  # deg
         self.roll_rate = roll_rate  # deg/s
