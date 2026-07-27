@@ -112,11 +112,13 @@ class ReferenceTrajectoryGenerator:
         self.vsi_ramp_time = vsi_ramp_time  # sec
         self.reaction_delay = reaction_delay  # sec atc-pilot communication latency buffer
 
-    def calculate_turn_rate(self, current_alt_ft: float) -> float:
-        """Approximates turn rate at 30 deg bank based on IAS target and initiation altitude rounded to 1000 ft."""
-        alt_k = round(current_alt_ft / 1000.0)
-        vtas = self.ias_target * (1.0 + 0.02 * alt_k)
-        return 629.89 / vtas
+    def calculate_turn_rate(self, current_alt_ft: float, bank_deg: float = 30.0) -> float:
+        """Computes exact aircraft turn rate (deg/s) using continuous V_TAS and dynamic bank angle."""
+        if abs(bank_deg) < 0.01:
+            return 0.0
+        vtas = self.ias_target * (1.0 + 20.0 * current_alt_ft)
+        # Aerodynamic rate of turn formula: (1091.29 * tan(bank)) / V_TAS
+        return (1091.29 * np.tan(np.radians(abs(bank_deg)))) / vtas
 
     def _determine_turn_direction(
         self, telem_df: pd.DataFrame, t_start: pd.Timestamp, window_sec: float = 30.0
