@@ -104,12 +104,18 @@ def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
 class ReferenceTrajectoryGenerator:
 
     def __init__(
-        self, max_bank=30.0, roll_rate=5.0, turn_rate=2.15, vsi_ramp_time=4.0
+        self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0
     ):
         self.max_bank = max_bank  # deg
         self.roll_rate = roll_rate  # deg/s
-        self.turn_rate = turn_rate  # deg/s (standard rate turn)
+        self.ias_target = ias_target  # kt target for A/THR
         self.vsi_ramp_time = vsi_ramp_time  # sec
+
+    def calculate_turn_rate(self, current_alt_ft: float) -> float:
+        """Approximates turn rate at 30 deg bank based on IAS target and initiation altitude rounded to 1000 ft."""
+        alt_k = round(current_alt_ft / 1000.0)
+        vtas = self.ias_target * (1.0 + 0.02 * alt_k)
+        return 629.89 / vtas
 
     def _determine_turn_direction(
         self, telem_df: pd.DataFrame, t_start: pd.Timestamp, window_sec: float = 30.0
@@ -196,6 +202,7 @@ class ReferenceTrajectoryGenerator:
         target_alt = curr_alt
         target_vsi = 0.0
         forced_turn_dir = "AUTO"
+        active_turn_rate = self.calculate_turn_rate(curr_alt)  # Initial turn rate
 
         for i in range(n):
             t_curr = timestamps[i]
@@ -212,6 +219,8 @@ class ReferenceTrajectoryGenerator:
                     target_hdg = float(ev["Target_Hdg"])
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
+                    # Lock in dynamic turn rate at moment of turn vector initiation
+                    active_turn_rate = self.calculate_turn_rate(curr_alt)
                     forced_turn_dir = self._determine_turn_direction(
                         telem_df, ev["Timestamp"], window_sec=30.0
                     )
@@ -240,7 +249,7 @@ class ReferenceTrajectoryGenerator:
                 hdg_diff = hdg_diff_shortest
 
             curr_turn_rate = (
-                (curr_bank / self.max_bank) * self.turn_rate
+                (curr_bank / self.max_bank) * active_turn_rate
                 if self.max_bank > 0
                 else 0
             )
@@ -272,7 +281,7 @@ class ReferenceTrajectoryGenerator:
             # Turn Rate Dynamics:
             # Positive bank (+curr_bank) increases heading (+turn_rate)
             actual_turn_rate = (
-                (curr_bank / self.max_bank) * self.turn_rate
+                (curr_bank / self.max_bank) * active_turn_rate
                 if self.max_bank > 0
                 else 0
             )
