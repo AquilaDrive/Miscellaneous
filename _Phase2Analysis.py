@@ -160,10 +160,16 @@ class FlightPerformanceAnalyzer:
         ref_df["Timestamp"] = pd.to_datetime(ref_df["Timestamp"])
         atc_df["Timestamp"] = pd.to_datetime(atc_df["Timestamp"])
 
-        # Omit Pause Periods (where state variables remain completely flat)
+        # Omit Pause Periods and reconstruct continuous timeline to eliminate time gaps
         telemetry_vars = ["Heading", "Bank", "Altitude", "VSI"]
         is_paused = (telem_df[telemetry_vars].diff().abs().sum(axis=1) == 0)
-        telem_df = telem_df[~is_paused].reset_index(drop=True)
+        
+        if is_paused.any():
+            dt_median = telem_df["Timestamp"].diff().dt.total_seconds().median()
+            telem_df = telem_df[~is_paused].reset_index(drop=True)
+            # Re-index timestamps continuously at uniform sampling interval
+            t_start = telem_df["Timestamp"].iloc[0]
+            telem_df["Timestamp"] = [t_start + pd.Timedelta(seconds=i * dt_median) for i in range(len(telem_df))]
 
         # Short Tail Segment Trim (< 60 SECONDS)
         atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
