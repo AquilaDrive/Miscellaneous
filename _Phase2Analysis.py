@@ -248,13 +248,19 @@ class FlightPerformanceAnalyzer:
             np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"]
         ).mean() * 100.0
 
-        # Oscillation Reversal Counts
+        # Oscillation Reversal Counts with Deadband Filter
+        DEADBAND = 0.2  # deg/s threshold to ignore sensor jitter
         hdg_rate = np.diff(df["Hdg_Err"].values)
         bank_rate = np.diff(df["Bank_Err"].values)
-        hdg_reversals = np.sum(np.diff(np.sign(hdg_rate[hdg_rate != 0])) != 0)
-        bank_reversals = np.sum(
-            np.diff(np.sign(bank_rate[bank_rate != 0])) != 0
-        )
+
+        clean_hdg_rate = np.where(np.abs(hdg_rate) > DEADBAND, hdg_rate, 0.0)
+        clean_bank_rate = np.where(np.abs(bank_rate) > DEADBAND, bank_rate, 0.0)
+
+        hdg_filtered = clean_hdg_rate[clean_hdg_rate != 0]
+        bank_filtered = clean_bank_rate[clean_bank_rate != 0]
+
+        hdg_reversals = np.sum(np.diff(np.sign(hdg_filtered)) != 0) if len(hdg_filtered) > 1 else 0
+        bank_reversals = np.sum(np.diff(np.sign(bank_filtered)) != 0) if len(bank_filtered) > 1 else 0
 
         # Time delta estimation
         dt = (
@@ -276,8 +282,8 @@ class FlightPerformanceAnalyzer:
         # 2. Ripple Time (Sec): Duration spent in rapid micro-oscillation corrections
         micro_reversals = np.zeros(n, dtype=bool)
         if n > 2:
-            hdg_dir_change = np.pad(np.diff(np.sign(hdg_rate)) != 0, (2, 0), mode='constant', constant_values=False)
-            bank_dir_change = np.pad(np.diff(np.sign(bank_rate)) != 0, (2, 0), mode='constant', constant_values=False)
+            hdg_dir_change = np.pad(np.diff(np.sign(clean_hdg_rate)) != 0, (2, 0), mode='constant', constant_values=False) & (clean_hdg_rate != 0)
+            bank_dir_change = np.pad(np.diff(np.sign(clean_bank_rate)) != 0, (2, 0), mode='constant', constant_values=False) & (clean_bank_rate != 0)
             fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
                                (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
             micro_reversals = (hdg_dir_change | bank_dir_change) & fine_band_active
