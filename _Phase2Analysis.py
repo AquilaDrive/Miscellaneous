@@ -125,6 +125,26 @@ def normalize_telemetry_columns(df: pd.DataFrame) -> pd.DataFrame:
                 f"Available columns: {list(df.columns)}"
             )
 
+    def normalize_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Standardizes reference trajectory column names."""
+    col_map = {}
+    lower_cols = {str(col).lower().strip(): col for col in df.columns}
+
+    candidates = {
+        "Ref_Hdg": ["ref_hdg", "ref_heading", "target_heading", "target_hdg", "heading", "hdg"],
+        "Ref_Bank": ["ref_bank", "ref_roll", "target_bank", "target_roll", "bank", "roll"],
+        "Ref_Alt": ["ref_alt", "ref_altitude", "target_altitude", "target_alt", "altitude", "alt"],
+        "Ref_VSI": ["ref_vsi", "target_vsi", "vsi", "vertical_speed"],
+    }
+
+    for target, options in candidates.items():
+        if target in df.columns:
+            continue
+        for opt in options:
+            if opt in lower_cols:
+                col_map[lower_cols[opt]] = target
+                break
+
     return df.rename(columns=col_map)
 
 
@@ -151,8 +171,9 @@ class FlightPerformanceAnalyzer:
     def process_and_align(
         self, telem_df: pd.DataFrame, ref_df: pd.DataFrame, atc_df: pd.DataFrame
     ) -> pd.DataFrame:
-        # Standardize Telemetry Columns dynamically
+        # Standardize Telemetry and Reference Columns dynamically
         telem_df = normalize_telemetry_columns(telem_df)
+        ref_df = normalize_ref_columns(ref_df)
         
         telem_df["Bank"] = -1.0 * telem_df["Bank"]
 
@@ -169,7 +190,7 @@ class FlightPerformanceAnalyzer:
             telem_df = telem_df[~is_paused].reset_index(drop=True)
             # Re-index timestamps continuously at uniform sampling interval
             t_start = telem_df["Timestamp"].iloc[0]
-            telem_df["Timestamp"] = [t_start + pd.Timedelta(seconds=i * dt_median) for i in range(len(telem_df))]
+            telem_df["Timestamp"] = pd.to_datetime([t_start + pd.Timedelta(seconds=i * dt_median) for i in range(len(telem_df))]).astype("datetime64[ns]")
 
         # Short Tail Segment Trim (< 60 SECONDS)
         atc_df = atc_df.sort_values("Timestamp").reset_index(drop=True)
@@ -183,7 +204,7 @@ class FlightPerformanceAnalyzer:
                 # Discard last segment log entry
                 atc_df = atc_df.iloc[:-1].reset_index(drop=True)
                 # Cut telemetry and reference data prior to the dropped segment's start time
-                telem_df["Timestamp"] = pd.to_datetime([t_start + pd.Timedelta(seconds=i * dt_median) for i in range(len(telem_df))]).astype("datetime64[ns]")
+                telem_df = telem_df[telem_df["Timestamp"] < last_seg_start].reset_index(drop=True)
                 ref_df = ref_df[ref_df["Timestamp"] < last_seg_start].reset_index(drop=True)
             else:
                 break
@@ -254,26 +275,28 @@ class FlightPerformanceAnalyzer:
             np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"]
         ).mean() * 100.0
 
+        # Time delta estimation
+        dt = (
+            (df["Timestamp"].iloc[-1] - df["Timestamp"].iloc[0]).total_seconds() / max(n - 1, 1)
+            if n > 1 else 1.0
+        )
+        if dt <= 0:
+            dt = 1.0
+
         # Oscillation Reversal Counts with Deadband Filter and 360-deg wrapping protection
         DEADBAND = 0.2  # deg/s threshold to ignore sensor jitter
         raw_hdg_diff = np.diff(df["Hdg_Err"].values)
-        hdg_rate = (raw_hdg_diff + 180) % 360 - 180  # Wrap across boundary
-        bank_rate = np.diff(df["Bank_Err"].values)
+        hdg_rate_deg_s = ((raw_hdg_diff + 180) % 360 - 180) / dt  # Convert to deg/s
+        bank_rate_deg_s = np.diff(df["Bank_Err"].values) / dt     # Convert to deg/s
 
-        clean_hdg_rate = np.where(np.abs(hdg_rate) > DEADBAND, hdg_rate, 0.0)
-        clean_bank_rate = np.where(np.abs(bank_rate) > DEADBAND, bank_rate, 0.0)
+        clean_hdg_rate = np.where(np.abs(hdg_rate_deg_s) > DEADBAND, hdg_rate_deg_s, 0.0)
+        clean_bank_rate = np.where(np.abs(bank_rate_deg_s) > DEADBAND, bank_rate_deg_s, 0.0)
 
         hdg_filtered = clean_hdg_rate[clean_hdg_rate != 0]
         bank_filtered = clean_bank_rate[clean_bank_rate != 0]
 
         hdg_reversals = np.sum(np.diff(np.sign(hdg_filtered)) != 0) if len(hdg_filtered) > 1 else 0
         bank_reversals = np.sum(np.diff(np.sign(bank_filtered)) != 0) if len(bank_filtered) > 1 else 0
-
-        # Time delta estimation
-        dt = (
-            (df["Timestamp"].iloc[-1] - df["Timestamp"].iloc[0]).total_seconds() / max(n - 1, 1)
-            if n > 1 else 1.0
-        )
 
         # 1. Spikes Count: Severe transient composite error excursions (>2x Standard Tolerance)
         norm_err = np.sqrt(
@@ -294,8 +317,6 @@ class FlightPerformanceAnalyzer:
             fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
                                (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
             micro_reversals = np.pad(hdg_dir_change | bank_dir_change, (1, 0), mode='constant', constant_values=False) & fine_band_active
-
-        ripple_time_sec = float(np.sum(micro_reversals) * dt)
 
         return {
             "Phase_Segment": label,
