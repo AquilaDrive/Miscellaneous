@@ -104,7 +104,7 @@ def main():
             while not sm.quit:
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 
-                alt = aq.get("PLANE_ALTITUDE")
+                alt = aq.get("INDICATED_ALTITUDE")
                 vs = aq.get("VERTICAL_SPEED")
                 pitch_raw = aq.get("PLANE_PITCH_DEGREES")
                 bank_raw = aq.get("PLANE_BANK_DEGREES")
