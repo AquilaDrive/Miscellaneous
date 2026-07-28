@@ -118,7 +118,7 @@ def generate_target(current_hdg, current_alt):
 
 
     avg_alt_ft = (current_alt + new_alt) / 2.0
-    vtas = 300.0 * (1.0 + 20.0 * avg_alt_ft)
+    vtas = 300.0 * (1.0 + 0.02 * (avg_alt_ft / 1000.0))
     turn_rate_30 = (1091.29 * 0.57735) / vtas  # tan(30 deg) = 0.57735
     roll_time = 30.0 / 5.0
     turn_time = int((hdg_diff / turn_rate_30) + roll_time) + random.randint(10, 20)
