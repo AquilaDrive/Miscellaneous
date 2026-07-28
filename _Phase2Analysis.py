@@ -156,9 +156,9 @@ class FlightPerformanceAnalyzer:
         
         telem_df["Bank"] = -1.0 * telem_df["Bank"]
 
-        telem_df["Timestamp"] = pd.to_datetime(telem_df["Timestamp"])
-        ref_df["Timestamp"] = pd.to_datetime(ref_df["Timestamp"])
-        atc_df["Timestamp"] = pd.to_datetime(atc_df["Timestamp"])
+        telem_df["Timestamp"] = pd.to_datetime(telem_df["Timestamp"]).astype("datetime64[ns]")
+        ref_df["Timestamp"] = pd.to_datetime(ref_df["Timestamp"]).astype("datetime64[ns]")
+        atc_df["Timestamp"] = pd.to_datetime(atc_df["Timestamp"]).astype("datetime64[ns]")
 
         # Omit Pause Periods and reconstruct continuous timeline to eliminate time gaps
         telemetry_vars = ["Heading", "Bank", "Altitude", "VSI"]
