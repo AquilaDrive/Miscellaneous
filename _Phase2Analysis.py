@@ -183,7 +183,7 @@ class FlightPerformanceAnalyzer:
                 # Discard last segment log entry
                 atc_df = atc_df.iloc[:-1].reset_index(drop=True)
                 # Cut telemetry and reference data prior to the dropped segment's start time
-                telem_df = telem_df[telem_df["Timestamp"] < last_seg_start].reset_index(drop=True)
+                telem_df["Timestamp"] = pd.to_datetime([t_start + pd.Timedelta(seconds=i * dt_median) for i in range(len(telem_df))]).astype("datetime64[ns]")
                 ref_df = ref_df[ref_df["Timestamp"] < last_seg_start].reset_index(drop=True)
             else:
                 break
