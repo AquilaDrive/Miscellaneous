@@ -125,7 +125,10 @@ def normalize_telemetry_columns(df: pd.DataFrame) -> pd.DataFrame:
                 f"Available columns: {list(df.columns)}"
             )
 
-    def normalize_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
+    return df.rename(columns=col_map)
+
+
+def normalize_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Standardizes reference trajectory column names."""
     col_map = {}
     lower_cols = {str(col).lower().strip(): col for col in df.columns}
@@ -317,6 +320,8 @@ class FlightPerformanceAnalyzer:
             fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
                                (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
             micro_reversals = np.pad(hdg_dir_change | bank_dir_change, (1, 0), mode='constant', constant_values=False) & fine_band_active
+
+        ripple_time_sec = float(np.sum(micro_reversals) * dt)
 
         return {
             "Phase_Segment": label,
