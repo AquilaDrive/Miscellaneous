@@ -116,7 +116,7 @@ class ReferenceTrajectoryGenerator:
         """Computes exact aircraft turn rate (deg/s) using continuous V_TAS and dynamic bank angle."""
         if abs(bank_deg) < 0.01:
             return 0.0
-        vtas = self.ias_target * (1.0 + 20.0 * current_alt_ft)
+        vtas = 300.0 * (1.0 + 0.02 * (avg_alt_ft / 1000.0))
         # Aerodynamic rate of turn formula: (1091.29 * tan(bank)) / V_TAS
         return (1091.29 * np.tan(np.radians(abs(bank_deg)))) / vtas
 
