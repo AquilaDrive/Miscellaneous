@@ -119,7 +119,7 @@ def generate_target(current_hdg, current_alt):
     turn_rate_30 = (1091.29 * 0.57735) / vtas  # tan(30 deg) = 0.57735
     roll_time = 30.0 / 5.0
     turn_time = int((hdg_diff / turn_rate_30) + roll_time) + random.randint(10, 20)
-    required_wait = max(transit_time, turn_time, 35)
+    required_wait = max(transit_time, turn_time, 35) + random.randint(60, 300)
 
     command_text = f"Fly heading {hdg_speech}, {alt_cmd}"
     return command_text, new_hdg, new_alt, vsi, required_wait
