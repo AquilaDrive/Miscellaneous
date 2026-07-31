@@ -309,7 +309,7 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_tol.set_ylim(-5, 105)
 
     # 4. Large Font Session ToL & Pass/Fail Requirements Card
-    ax_kpi_req.text(0.05, 0.91, "SESSION ENVELOPE TOLERANCE (>85% Target)", color='#ffffff', fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.91, "SESSION ENVELOPE TOLERANCE [>85%]", color='#ffffff', fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
     # Sub-tile positions: (x, y, title, val, color)
     tiles = [
         (0.05, 0.56, "ALT TOL", sess_tol_alt, COLORS['Altitude']),
