@@ -205,6 +205,7 @@ class FlightPerformanceAnalyzer:
             else:
                 break
 
+
         # Time-alignment via merge_asof
         merged = pd.merge_asof(
             telem_df.sort_values("Timestamp"),
@@ -214,11 +215,26 @@ class FlightPerformanceAnalyzer:
         )
 
         # Calculate error metrics
-        merged["Hdg_Err"] = (
-            merged["Heading"] - merged["Ref_Hdg"] + 180
-        ) % 360 - 180
+        # Shape-match altitude tolerance (Dynamic Time-Shift)
+        # Target temporal lag buffer in seconds (e.g., ±2.5 seconds allowed lag/lead)
+        TIME_BUFFER_SEC = 2.5  
+        # Calculate average time delta (dt) in seconds from actual timestamps
+        dt = (merged["Timestamp"].iloc[-1] - merged["Timestamp"].iloc[0]).total_seconds() / max(len(merged) - 1, 1)
+        # Calculate exact number of frames corresponding to the time buffer
+        # At 4Hz (dt = 0.25s), window_frames will cleanly evaluate to 10 frames
+        window_frames = max(int(np.round(TIME_BUFFER_SEC / dt)), 1)
+        # Create allowable envelope bounds over the temporal window
+        ref_alt_min = merged["Ref_Alt"].rolling(window=window_frames * 2, center=True, min_periods=1).min()
+        ref_alt_max = merged["Ref_Alt"].rolling(window=window_frames * 2, center=True, min_periods=1).max()
+        below_mask = merged["Altitude"] < ref_alt_min
+        above_mask = merged["Altitude"] > ref_alt_max
+        # Evaluate altitude error only outside the temporal shape corridor
+        merged["Alt_Err"] = 0.0
+        merged.loc[below_mask, "Alt_Err"] = merged["Altitude"] - ref_alt_min
+        merged.loc[above_mask, "Alt_Err"] = merged["Altitude"] - ref_alt_max
+        # Standard instantaneous calculations for remaining axes
+        merged["Hdg_Err"] = (merged["Heading"] - merged["Ref_Hdg"] + 180) % 360 - 180
         merged["Bank_Err"] = merged["Bank"] - merged["Ref_Bank"]
-        merged["Alt_Err"] = merged["Altitude"] - merged["Ref_Alt"]
         merged["VSI_Err"] = merged["VSI"] - merged["Ref_VSI"]
 
         # Assign ATC Maneuver Segments
