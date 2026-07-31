@@ -294,16 +294,24 @@ class FlightPerformanceAnalyzer:
         hdg_reversals = np.sum(np.diff(np.sign(hdg_filtered)) != 0) if len(hdg_filtered) > 1 else 0
         bank_reversals = np.sum(np.diff(np.sign(bank_filtered)) != 0) if len(bank_filtered) > 1 else 0
 
-        # 1. Spikes Count: Severe transient composite error excursions (>2x Standard Tolerance)
-        norm_err = np.sqrt(
+        # 1. Spikes Count: Severe transient composite error excursions with Hysteresis
+        norm_err_vals = np.sqrt(
             (df["Hdg_Err"] / self.TOLERANCE_STANDARD["Hdg"]) ** 2
             + (df["Bank_Err"] / self.TOLERANCE_STANDARD["Bank"]) ** 2
             + (df["Alt_Err"] / self.TOLERANCE_STANDARD["Alt"]) ** 2
-        )
-        is_spike = norm_err > 2.0
-        spike_events = int(np.sum(np.diff(is_spike.astype(int)) == 1))
-        if len(is_spike) > 0 and is_spike.iloc[0]:
-            spike_events += 1
+        ).values
+        HIGH_THRESH = 2.0  # Trigger entry into spike state
+        LOW_THRESH = 1.6   # Must drop below this to clear spike state
+        spike_events = 0
+        in_spike_state = False
+        for err in norm_err_vals:
+            if not in_spike_state:
+                if err >= HIGH_THRESH:
+                    in_spike_state = True
+                    spike_events += 1
+            else:
+                if err < LOW_THRESH:
+                    in_spike_state = False
 
         # 2. Ripple Time (Sec): Duration spent in rapid micro-oscillation corrections
         min_episode_dur = 3.0  # Threshold for a flagged ripple event (seconds)
