@@ -306,15 +306,27 @@ class FlightPerformanceAnalyzer:
             spike_events += 1
 
         # 2. Ripple Time (Sec): Duration spent in rapid micro-oscillation corrections
-        micro_reversals = np.zeros(n, dtype=bool)
-        if n > 2:
-            hdg_dir_change = np.pad(np.diff(np.sign(clean_hdg_rate)) != 0, (1, 0), mode='constant', constant_values=False) & (clean_hdg_rate != 0)
-            bank_dir_change = np.pad(np.diff(np.sign(clean_bank_rate)) != 0, (1, 0), mode='constant', constant_values=False) & (clean_bank_rate != 0)
-            fine_band_active = (np.abs(df["Hdg_Err"]) <= self.TOLERANCE_STANDARD["Hdg"]) & \
-                               (np.abs(df["Bank_Err"]) <= self.TOLERANCE_STANDARD["Bank"])
-            micro_reversals = np.pad(hdg_dir_change | bank_dir_change, (1, 0), mode='constant', constant_values=False) & fine_band_active
-
-        ripple_time_sec = float(np.sum(micro_reversals) * dt)
+        min_episode_dur = 3.0  # Threshold for a flagged ripple event (seconds)
+        reversal_window_sec = 1.2  # Max allowable time between reversals to count as continuous hunting
+        # 1. Flag raw reversal timestamps inside tolerance
+        reversal_occurred = (hdg_dir_change | bank_dir_change) & fine_band_active
+        # 2. Convert raw point reversals into a continuous "active oscillation" state using a rolling window
+        window_samples = int(np.ceil(reversal_window_sec / dt))
+        active_oscillation = pd.Series(reversal_occurred).rolling(window=window_samples, min_periods=1).sum() >= 2
+        # 3. Identify contiguous oscillation episodes
+        episode_starts = active_oscillation & (~active_oscillation.shift(1, fill_value=False))
+        episode_ids = episode_starts.cumsum() * active_oscillation
+        # 4. Measure duration of each standalone episode
+        standalone_ripples = []
+        if episode_ids.max() > 0:
+            for ep_id, group in df.groupby(episode_ids):
+                if ep_id == 0:
+                    continue  # Non-oscillating periods
+                dur = len(group) * dt
+                if dur >= min_episode_dur:
+                    standalone_ripples.append(dur)
+        ripple_count = len(standalone_ripples)
+        ripple_time_sec = sum(standalone_ripples)
 
         return {
             "Phase_Segment": label,
