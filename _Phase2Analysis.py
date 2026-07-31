@@ -216,7 +216,7 @@ class FlightPerformanceAnalyzer:
         # Calculate error metrics
         # Shape-match altitude tolerance (Dynamic Time-Shift)
         # Target temporal lag buffer in seconds (e.g., ±2.5 seconds allowed lag/lead)
-        TIME_BUFFER_SEC = 3.5  # Generous time buffer for smooth pitch initiation
+        TIME_BUFFER_SEC = 4.0  # Generous time buffer for smooth pitch initiation
         # Determine sampling rate dt (e.g., 0.25s for 4Hz)
         dt = (merged["Timestamp"].iloc[-1] - merged["Timestamp"].iloc[0]).total_seconds() / max(len(merged) - 1, 1)
         window_frames = max(int(np.round(TIME_BUFFER_SEC / dt)), 1)
@@ -224,26 +224,23 @@ class FlightPerformanceAnalyzer:
         ref_alt_min = merged["Ref_Alt"].rolling(window=window_frames * 2, center=True, min_periods=1).min()
         ref_alt_max = merged["Ref_Alt"].rolling(window=window_frames * 2, center=True, min_periods=1).max()
         # 2. Oscillation & Gradient Integrity Checks
-        # Identify intended climb vs descent vs level flight from the Reference Trajectory
         is_climbing = merged["Ref_VSI"] > 100.0
         is_descending = merged["Ref_VSI"] < -100.0
-        # Oscillation Flag: Flying opposite to the intended maneuver direction (e.g., negative VSI while climbing)
+        # Oscillation Flag: Flying opposite to intended direction
         directional_violation = (is_climbing & (merged["VSI"] < -50.0)) | (is_descending & (merged["VSI"] > 50.0))
-        # Rate Stability Flag: Excessive VSI jitter/hunting (detecting rapid pitch reversals)
+        # Rate Stability Flag: Excessive VSI acceleration/hunting
         vsi_rate_of_change = np.abs(np.gradient(merged["VSI"], dt))
-        vsi_unstable = vsi_rate_of_change > 300.0  # fpm per second acceleration limit
-        # 3. Collapse Corridor to Instantaneous Check if Oscillating
-        # If flight is smooth and monotonic, use temporal corridor.
-        # If flight is oscillating/unstable, fall back to exact Ref_Alt.
+        vsi_unstable = vsi_rate_of_change > 300.0
+        # 3. Collapse Corridor using Pandas .where() (Preserves Index & Series Type)
         corridor_active = ~(directional_violation | vsi_unstable)
-        effective_ref_min = np.where(corridor_active, ref_alt_min, merged["Ref_Alt"])
-        effective_ref_max = np.where(corridor_active, ref_alt_max, merged["Ref_Alt"])
+        effective_ref_min = ref_alt_min.where(corridor_active, merged["Ref_Alt"])
+        effective_ref_max = ref_alt_max.where(corridor_active, merged["Ref_Alt"])
         # 4. Calculate Final Altitude Error
         below_mask = merged["Altitude"] < effective_ref_min
         above_mask = merged["Altitude"] > effective_ref_max
         merged["Alt_Err"] = 0.0
-        merged.loc[below_mask, "Alt_Err"] = merged["Altitude"] - effective_ref_min[below_mask]
-        merged.loc[above_mask, "Alt_Err"] = merged["Altitude"] - effective_ref_max[above_mask]
+        merged.loc[below_mask, "Alt_Err"] = merged.loc[below_mask, "Altitude"] - effective_ref_min[below_mask]
+        merged.loc[above_mask, "Alt_Err"] = merged.loc[above_mask, "Altitude"] - effective_ref_max[above_mask]
         # Standard instantaneous calculations for remaining axes
         merged["Hdg_Err"] = (merged["Heading"] - merged["Ref_Hdg"] + 180) % 360 - 180
         merged["Bank_Err"] = merged["Bank"] - merged["Ref_Bank"]
