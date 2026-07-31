@@ -363,6 +363,7 @@ class FlightPerformanceAnalyzer:
             "Hdg_Oscillations": int(hdg_reversals),
             "Bank_Oscillations": int(bank_reversals),
             "Spikes": spike_events,
+            "Ripple_Count": len(standalone_ripples),
             "Ripple_Time": round(ripple_time_sec, 2),
         }
 
