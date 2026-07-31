@@ -205,8 +205,15 @@ class FlightPerformanceAnalyzer:
             else:
                 break
 
+        # Time-alignment via merge_asof
+        merged = pd.merge_asof(
+            telem_df.sort_values("Timestamp"),
+            ref_df.sort_values("Timestamp"),
+            on="Timestamp",
+            direction="nearest",
+        )
+
         # Calculate error metrics
-        
         # Shape-match altitude tolerance (Dynamic Time-Shift)
         # Target temporal lag buffer in seconds (e.g., ±2.5 seconds allowed lag/lead)
         TIME_BUFFER_SEC = 3.5  # Generous time buffer for smooth pitch initiation
@@ -237,7 +244,6 @@ class FlightPerformanceAnalyzer:
         merged["Alt_Err"] = 0.0
         merged.loc[below_mask, "Alt_Err"] = merged["Altitude"] - effective_ref_min[below_mask]
         merged.loc[above_mask, "Alt_Err"] = merged["Altitude"] - effective_ref_max[above_mask]
-        
         # Standard instantaneous calculations for remaining axes
         merged["Hdg_Err"] = (merged["Heading"] - merged["Ref_Hdg"] + 180) % 360 - 180
         merged["Bank_Err"] = merged["Bank"] - merged["Ref_Bank"]
