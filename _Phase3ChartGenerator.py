@@ -4,7 +4,8 @@ import traceback
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.ticker import MultipleLocator, FuncFormatter, FancyBboxPatch
+from matplotlib.ticker import MultipleLocator, FuncFormatter
+from matplotlib.patches import FancyBboxPatch
 import seaborn as sns
 import numpy as np
 import pandas as pd
