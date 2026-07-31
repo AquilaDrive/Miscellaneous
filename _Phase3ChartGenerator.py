@@ -246,7 +246,6 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     composite_rmse_idx = (sess_rmse_hdg / 1.5 + sess_rmse_alt / 50.0 + sess_rmse_vsi / 100.0) / 3.0
 
     # Evaluate Pass Requirements
-    hdg_pass    = sess_rmse_hdg < 1.5
     env_pass    = sess_tol_env > 85.0
     spikes_pass = spikes_val <= 2
     ripple_pass = ripple_val < 3.0
@@ -309,9 +308,6 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     # 4. Large Font Session ToL & Pass/Fail Requirements Card
     ax_kpi_req.text(0.08, 0.88, "SESSION TOLERANCE", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
     ax_kpi_req.text(0.08, 0.73, f"Alt ToL: {sess_tol_alt:.1f}% | Bank: {sess_tol_bnk:.1f}%", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
-    
-    hdg_status = "PASS" if hdg_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.58, f"Hdg RMSE < 1.5°:  {sess_rmse_hdg:.2f}° [{hdg_status}]", color=COLORS['Pass'] if hdg_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
     
     env_status = "PASS" if env_pass else "FAIL"
     ax_kpi_req.text(0.08, 0.43, f"Envelope > 85%:   {sess_tol_env:.1f}% [{env_status}]", color=COLORS['Pass'] if env_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
