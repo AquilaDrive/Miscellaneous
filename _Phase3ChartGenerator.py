@@ -230,14 +230,16 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     sess_tol_hdg = float((np.abs(aln_df['Hdg_Err']) <= TOL_FINE['Hdg']).mean() * 100.0)
     sess_tol_bnk = float((np.abs(aln_df['Bank_Err']) <= TOL_FINE['Bank']).mean() * 100.0)
 
-    # Retrieve event-based indicators (Spikes & Ripple Time) from overall scorecard row
+    # Retrieve event-based indicators (Spikes & Ripple Time/Count) from overall scorecard row
     overall_row = sc_df[sc_df['Phase_Segment'] == 'Overall Flight']
     if not overall_row.empty:
         spikes_val = int(overall_row['Spikes'].values[0]) if 'Spikes' in overall_row else 0
         ripple_val = float(overall_row['Ripple_Time'].values[0]) if 'Ripple_Time' in overall_row else 0.0
+        ripple_cnt = int(overall_row['Ripple_Count'].values[0]) if ('Ripple_Count' in overall_row and pd.notna(overall_row['Ripple_Count'].values[0])) else None
     else:
         spikes_val = 0
         ripple_val = 0.0
+        ripple_cnt = None
 
     # Overall Session Envelope ToL (Average across dimensions)
     sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
@@ -317,6 +319,8 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     
     rip_status = "PASS" if ripple_pass else "FAIL"
     ax_kpi_req.text(0.08, 0.13, f"Ripple < 3.0s:      {ripple_val}s [{rip_status}]", color=COLORS['Pass'] if ripple_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+    if ripple_cnt is not None:
+        ax_kpi_req.text(0.08, 0.02, f"Ripple Events:     {ripple_cnt}", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
