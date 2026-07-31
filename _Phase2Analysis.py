@@ -216,7 +216,7 @@ class FlightPerformanceAnalyzer:
         # Calculate error metrics
         # Shape-match altitude tolerance (Dynamic Time-Shift)
         # Target temporal lag buffer in seconds (e.g., ±2.5 seconds allowed lag/lead)
-        TIME_BUFFER_SEC = 4.0  # Generous time buffer for smooth pitch initiation
+        TIME_BUFFER_SEC = 5.0  # Generous time buffer for smooth pitch initiation
         # Determine sampling rate dt (e.g., 0.25s for 4Hz)
         dt = (merged["Timestamp"].iloc[-1] - merged["Timestamp"].iloc[0]).total_seconds() / max(len(merged) - 1, 1)
         window_frames = max(int(np.round(TIME_BUFFER_SEC / dt)), 1)
