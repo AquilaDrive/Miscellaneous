@@ -288,9 +288,9 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
 
     # 2. Large Font Session RMSE & Composite KPI Card
     ax_kpi_val.text(0.08, 0.88, "SESSION RMSE EVALUATIONS", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.70, f"Altitude:  {sess_rmse_alt:.1f} ft", color=COLORS['Altitude'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.54, f"VSI:       {sess_rmse_vsi:.1f} fpm", color=COLORS['VSI'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
-    ax_kpi_val.text(0.08, 0.38, f"Heading:   {sess_rmse_hdg:.2f} °", color=COLORS['Heading'], fontsize=15, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.70, f"Altitude:  {sess_rmse_alt:.1f} ft  [< 50.0]", color=COLORS['Altitude'], fontsize=14, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.54, f"VSI:       {sess_rmse_vsi:.1f} fpm  [< 100.0]", color=COLORS['VSI'], fontsize=14, fontweight='bold', transform=ax_kpi_val.transAxes)
+    ax_kpi_val.text(0.08, 0.38, f"Heading:   {sess_rmse_hdg:.2f}°  [< 1.50]", color=COLORS['Heading'], fontsize=14, fontweight='bold', transform=ax_kpi_val.transAxes)
     
     comp_color = COLORS['Pass'] if composite_rmse_idx < 1.0 else COLORS['Fail']
     ax_kpi_val.text(0.08, 0.18, "COMPOSITE RMSE INDEX", color='#888888', fontsize=10, transform=ax_kpi_val.transAxes)
@@ -308,19 +308,31 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_tol.set_ylim(-5, 105)
 
     # 4. Large Font Session ToL & Pass/Fail Requirements Card
-    ax_kpi_req.text(0.08, 0.88, "SESSION TOLERANCE", color='#ffffff', fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    ax_kpi_req.text(0.08, 0.73, f"Alt ToL: {sess_tol_alt:.1f}% | Bank: {sess_tol_bnk:.1f}%", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
-    
-    env_status = "PASS" if env_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.43, f"Envelope > 85%:   {sess_tol_env:.1f}% [{env_status}]", color=COLORS['Pass'] if env_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    
+    ax_kpi_req.text(0.05, 0.90, "SESSION ENVELOPE TOLERANCE (>85% Target)", color='#ffffff', fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
+    # Sub-tile positions: (x, y, title, val, color)
+    tiles = [
+        (0.05, 0.52, "ALT TOL", sess_tol_alt, COLORS['Altitude']),
+        (0.52, 0.52, "HDG TOL", sess_tol_hdg, COLORS['Heading']),
+        (0.05, 0.16, "BANK TOL", sess_tol_bnk, COLORS['Bank']),
+        (0.52, 0.16, "COMBINED", sess_tol_env, COLORS['Pass'] if env_pass else COLORS['Fail'])
+    ]
+
+    for x_pos, y_pos, label, val, color in tiles:
+        # Draw uniform background sub-tile box
+        rect = plt.Rectangle((x_pos, y_pos), 0.43, 0.32, transform=ax_kpi_req.transAxes,
+                             facecolor='#141414', edgecolor='#2a2a2a', boxstyle='round,pad=0.02', clip_on=False)
+        ax_kpi_req.add_patch(rect)
+        # Label Header
+        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.22, label, color='#888888', fontsize=9, fontweight='bold', transform=ax_kpi_req.transAxes)
+        # Metric Percentage Value & Status
+        status_txt = "PASS" if val >= 85.0 else "FAIL"
+        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.06, f"{val:.1f}% [{status_txt}]", color=color, fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+
+    # Bottom Event Summary Line (Spikes & Ripple)
     spk_status = "PASS" if spikes_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.28, f"Spikes 0–2:         {spikes_val} [{spk_status}]", color=COLORS['Pass'] if spikes_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    
     rip_status = "PASS" if ripple_pass else "FAIL"
-    ax_kpi_req.text(0.08, 0.13, f"Ripple < 3.0s:      {ripple_val}s [{rip_status}]", color=COLORS['Pass'] if ripple_pass else COLORS['Fail'], fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
-    if ripple_cnt is not None:
-        ax_kpi_req.text(0.08, 0.02, f"Ripple Events:     {ripple_cnt}", color='#aaaaaa', fontsize=11, transform=ax_kpi_req.transAxes)
+    summary_txt = f"Events: Spikes {spikes_val} [{spk_status}] | Ripple {ripple_val:.1f}s [{rip_status}]"
+    ax_kpi_req.text(0.05, 0.04, summary_txt, color='#aaaaaa', fontsize=9.5, transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
