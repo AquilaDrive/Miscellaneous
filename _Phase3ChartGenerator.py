@@ -4,7 +4,7 @@ import traceback
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.ticker import MultipleLocator, FuncFormatter
+from matplotlib.ticker import MultipleLocator, FuncFormatter, FancyBboxPatch
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -318,9 +318,15 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ]
 
     for x_pos, y_pos, label, val, color in tiles:
-        # Draw uniform background sub-tile box
-        rect = plt.Rectangle((x_pos, y_pos), 0.43, 0.32, transform=ax_kpi_req.transAxes,
-                             facecolor='#141414', edgecolor='#2a2a2a', boxstyle='round,pad=0.02', clip_on=False)
+        # Draw uniform background sub-tile box using FancyBboxPatch
+        rect = FancyBboxPatch(
+            (x_pos, y_pos), 0.43, 0.32,
+            transform=ax_kpi_req.transAxes,
+            facecolor='#141414',
+            edgecolor='#2a2a2a',
+            boxstyle='round,pad=0.0,rounding_size=0.02',
+            clip_on=False
+        )
         ax_kpi_req.add_patch(rect)
         # Label Header
         ax_kpi_req.text(x_pos + 0.04, y_pos + 0.22, label, color='#888888', fontsize=9, fontweight='bold', transform=ax_kpi_req.transAxes)
