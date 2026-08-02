@@ -205,6 +205,7 @@ class ReferenceTrajectoryGenerator:
         init_row = atc_df.iloc[0]
         curr_hdg = float(init_row["Target_Hdg"])
         curr_alt = float(init_row["Target_Alt_Ft"])
+        curr_ias = float(init_row.get("curr_ias", self.default_ias_target))
         curr_vsi = 0.0
         curr_bank = 0.0
 
