@@ -119,7 +119,9 @@ class ReferenceTrajectoryGenerator:
         self.vsi_ramp_time = vsi_ramp_time # sec
         self.reaction_delay = reaction_delay # sec atc-pilot communication latency buffer
 
-    def calculate_turn_rate( self, current_alt_ft: float, bank_deg: float = 30.0, current_ias: float = None) -> float:
+    def calculate_turn_rate(
+        self, current_alt_ft: float, bank_deg: float = 30.0, current_ias: float = None
+    ) -> float:
         if abs(bank_deg) < 0.01:
             return 0.0
         # Fallback to instance default if current_ias wasn't supplied
