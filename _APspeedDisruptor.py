@@ -1,4 +1,3 @@
-import csv
 import ctypes
 import os
 import sys
@@ -66,61 +65,47 @@ def main():
     MIN_PAD_SEC = 15           # Buffer hold time after target is reached
     MAX_PAD_SEC = 45
 
-    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    csv_filename = os.path.join(SCRIPT_DIR, f"speed_events_{timestamp_str}.csv")
-
-    headers = ["Timestamp", "Target_Speed_Kts", "Previous_Speed_Kts", "Speed_Delta_Kts", "Hold_Interval_Sec"]
-
     # Initial state
     current_target_speed = 293
     set_ap_speed(current_target_speed)
 
-    with open(csv_filename, mode='w', newline='', buffering=1) as csv_file:
-        csv_writer = csv.writer(csv_file)
-        csv_writer.writerow(headers)
-        
-        print(f"\n[DISRUPTOR STARTED]")
-        print(f"  CSV: {os.path.basename(csv_filename)}")
-        print(f"  Initial AP Speed set to: {current_target_speed} kts")
-        print("\nPress Ctrl+C in this window to stop.\n")
+    print(f"\n[DISRUPTOR ACTIVE]")
+    print(f"  Initial AP Speed set to: {current_target_speed} kts")
+    print("\nPress Ctrl+C in this window to stop.\n")
 
-        event_count = 0
-        try:
-            while not sm.quit:
-                # 1. Pick a new speed with a meaningful delta
-                new_speed = current_target_speed
-                while abs(new_speed - current_target_speed) < MIN_SPEED_DELTA:
-                    new_speed = random.randint(MIN_SPEED_KTS, MAX_SPEED_KTS)
-                
-                speed_delta = abs(new_speed - current_target_speed)
-                
-                # 2. Calculate dynamic delay: transition time + random buffer
-                transition_time = speed_delta * SEC_PER_KNOT_DELTA
-                random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
-                total_interval = round(transition_time + random_buffer, 1)
+    event_count = 0
+    try:
+        while not sm.quit:
+            # 1. Pick a new speed with a meaningful delta
+            new_speed = current_target_speed
+            while abs(new_speed - current_target_speed) < MIN_SPEED_DELTA:
+                new_speed = random.randint(MIN_SPEED_KTS, MAX_SPEED_KTS)
+            
+            speed_delta = abs(new_speed - current_target_speed)
+            
+            # 2. Calculate dynamic delay: transition time + random buffer
+            transition_time = speed_delta * SEC_PER_KNOT_DELTA
+            random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
+            total_interval = round(transition_time + random_buffer, 1)
 
-                # 3. Fire event to MSFS
-                set_ap_speed(new_speed)
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            # 3. Fire event directly to MSFS
+            set_ap_speed(new_speed)
+            now = datetime.now().strftime("%H:%M:%S")
 
-                # 4. Write to CSV
-                csv_writer.writerow([now, new_speed, current_target_speed, speed_delta, total_interval])
-                csv_file.flush()
+            event_count += 1
+            print(f"[{now}] Event #{event_count}: Target Speed -> {new_speed} kts (Δ {speed_delta} kts) | Holding {total_interval}s")
 
-                event_count += 1
-                print(f"[{now}] Target Speed -> {new_speed} kts (Delta: {speed_delta} kts) | Holding for {total_interval}s")
+            current_target_speed = new_speed
 
-                current_target_speed = new_speed
+            # 4. Non-blocking delay loop for responsive Ctrl+C exit
+            start_hold = time.time()
+            while (time.time() - start_hold) < total_interval:
+                time.sleep(0.5)
 
-                # 5. Non-blocking sleep loop for clean Ctrl+C interruption
-                start_hold = time.time()
-                while (time.time() - start_hold) < total_interval:
-                    time.sleep(0.5)
-
-        except KeyboardInterrupt:
-            print(f"\n\n[STOPPED] Logged {event_count} speed changes to CSV.")
-        finally:
-            input("\nPress Enter to close this window...")
+    except KeyboardInterrupt:
+        print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
+    finally:
+        input("\nPress Enter to close this window...")
 
 if __name__ == "__main__":
     try:
