@@ -70,13 +70,13 @@ def main():
     log_filename = os.path.join(SCRIPT_DIR, f"flight_telemetry_{timestamp_str}.log")
 
     headers = [
-        "Timestamp", "Altitude_Ft", "VerticalSpeed_FPM", 
+        "Timestamp", "Indicated_Airspeed_Kts", "AP_Target_Speed_Kts", "Altitude_Ft", "VerticalSpeed_FPM", 
         "Pitch_Deg", "Bank_Deg", "Heading_Deg", "Yoke_Roll_Pct", "Yoke_Pitch_Pct", "Rudder_Pct"
     ]
 
     # Fixed-width header string for the human-readable .log file
     log_header = (
-        f"{'Timestamp':<23} | {'Alt (ft)':>8} | {'VS (fpm)':>8} | "
+        f"{'Timestamp':<23} | {'IAS (kt)':>8} | {'AP_Spd':>6} | {'Alt (ft)':>8} | {'VS (fpm)':>8} | "
         f"{'Pitch':>7} | {'Bank':>7} | {'Hdg':>5} | "
         f"{'Roll_In':>7} | {'Ptch_In':>7} | {'Rud_In':>7}\n"
     )
@@ -103,7 +103,9 @@ def main():
         try:
             while not sm.quit:
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                
+
+                ias_raw = aq.get("AIRSPEED INDICATED")
+                ap_spd_raw = aq.get("AUTOPILOT AIRSPEED HOLD VAR")
                 alt = aq.get("INDICATED_ALTITUDE")
                 vs = aq.get("VERTICAL_SPEED")
                 pitch_raw = aq.get("PLANE_PITCH_DEGREES")
@@ -114,6 +116,8 @@ def main():
                 yoke_y = aq.get("YOKE_Y_POSITION")
                 rudder = aq.get("RUDDER_PEDAL_POSITION")
                 
+                ias_kts = ias_raw if ias_raw is not None else 0.0
+                ap_target_kts = ap_spd_raw if ap_spd_raw is not None else 0.0
                 alt_ft = alt if alt is not None else 0.0
                 vs_fpm = vs if vs is not None else 0.0
                 p_deg = (pitch_raw * RAD_TO_DEG) if pitch_raw is not None else 0.0
@@ -127,6 +131,8 @@ def main():
                 # 1. Write clean machine-parsable CSV row
                 csv_writer.writerow([
                     now,
+                    round(ias_kts, 1),
+                    round(ap_target_kts, 1),
                     round(alt_ft, 1),
                     round(vs_fpm, 1),
                     round(p_deg, 2),
@@ -140,6 +146,8 @@ def main():
                 # 2. Write aligned fixed-width LOG row
                 formatted_log_line = (
                     f"{now:<23} | "
+                    f"{ias_kts:>8.1f} | "
+                    f"{ap_target_kts:>6.1f} | "
                     f"{alt_ft:>8.1f} | "
                     f"{vs_fpm:>8.1f} | "
                     f"{p_deg:>7.2f} | "
@@ -158,7 +166,7 @@ def main():
                 row_count += 1
                 
                 print(
-                    f"\r> Logging... Rows: {row_count:<5} | Alt: {round(alt_ft):>5}ft | Hdg: {round(hdg_deg):>3}° | Pitch: {round(p_deg, 1):>5}°", 
+                    f"\r> Logging... Rows: {row_count:<5} | IAS: {round(ias_kts):>3}kt | Target: {round(ap_target_kts):>3}kt | Alt: {round(alt_ft):>5}ft | Pitch: {round(p_deg, 1):>5}°", 
                     end="", 
                     flush=True
                 )
