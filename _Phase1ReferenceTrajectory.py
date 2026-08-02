@@ -113,17 +113,19 @@ class ReferenceTrajectoryGenerator:
     def __init__(
         self, max_bank=30.0, roll_rate=5.0, ias_target=300.0, vsi_ramp_time=4.0, reaction_delay=1.5
     ):
-        self.max_bank = max_bank  # deg
-        self.roll_rate = roll_rate  # deg/s
-        self.ias_target = ias_target  # kt target for A/THR
-        self.vsi_ramp_time = vsi_ramp_time  # sec
-        self.reaction_delay = reaction_delay  # sec atc-pilot communication latency buffer
+        self.max_bank = max_bank # deg
+        self.roll_rate = roll_rate # deg/s
+        self.ias_target = ias_target  # kt Central default IAS if none provided
+        self.vsi_ramp_time = vsi_ramp_time # sec
+        self.reaction_delay = reaction_delay # sec atc-pilot communication latency buffer
 
-    def calculate_turn_rate(self, current_alt_ft: float, bank_deg: float = 30.0, current_ias: float = 300.0) -> float:
+    def calculate_turn_rate( self, current_alt_ft: float, bank_deg: float = 30.0, current_ias: float = None) -> float:
         if abs(bank_deg) < 0.01:
             return 0.0
+        # Fallback to instance default if current_ias wasn't supplied
+        if current_ias is None:
+            current_ias = self.ias_target
         vtas = current_ias * (1.0 + 0.02 * (current_alt_ft / 1000.0))
-        # Aerodynamic rate of turn formula: (1091.29 * tan(bank)) / V_TAS
         return (1091.29 * np.tan(np.radians(abs(bank_deg)))) / vtas
 
     def _determine_turn_direction(
