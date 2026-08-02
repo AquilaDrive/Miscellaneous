@@ -95,6 +95,13 @@ def normalize_atc_columns(df: pd.DataFrame) -> pd.DataFrame:
                 col_map[lower_cols[opt]] = target
                 break
 
+    # Check for missing IAS column and apply default fallback
+    if 'curr_ias' not in df.columns:
+        df['curr_ias'] = 300.0
+    else:
+        # Fills missing/NaN individual values with 300.0 if the column exists
+        df['curr_ias'] = df['curr_ias'].fillna(300.0)
+
     return df.rename(columns=col_map)
 
 
@@ -112,11 +119,10 @@ class ReferenceTrajectoryGenerator:
         self.vsi_ramp_time = vsi_ramp_time  # sec
         self.reaction_delay = reaction_delay  # sec atc-pilot communication latency buffer
 
-    def calculate_turn_rate(self, current_alt_ft: float, bank_deg: float = 30.0) -> float:
-        """Computes exact aircraft turn rate (deg/s) using continuous V_TAS and dynamic bank angle."""
+    def calculate_turn_rate(self, current_alt_ft: float, bank_deg: float = 30.0, current_ias: float = 300.0) -> float:
         if abs(bank_deg) < 0.01:
             return 0.0
-        vtas = self.ias_target * (1.0 + 0.02 * (current_alt_ft / 1000.0))
+        vtas = current_ias * (1.0 + 0.02 * (current_alt_ft / 1000.0))
         # Aerodynamic rate of turn formula: (1091.29 * tan(bank)) / V_TAS
         return (1091.29 * np.tan(np.radians(abs(bank_deg)))) / vtas
 
@@ -210,7 +216,7 @@ class ReferenceTrajectoryGenerator:
             t_curr = timestamps[i]
 
             # Continuously update reference turn rate based on current altitude
-            active_turn_rate = self.calculate_turn_rate(curr_alt)
+            active_turn_rate = self.calculate_turn_rate(curr_alt, current_ias=round(curr_ias))
 
             while (
                 event_idx < num_events
@@ -225,7 +231,7 @@ class ReferenceTrajectoryGenerator:
                     target_alt = float(ev["Target_Alt_Ft"])
                     target_vsi = float(ev["Target_VSI_FPM"])
                     # Lock in dynamic turn rate at moment of turn vector initiation
-                    active_turn_rate = self.calculate_turn_rate(curr_alt)
+                    active_turn_rate = self.calculate_turn_rate(curr_alt, current_ias=round(curr_ias))
                     forced_turn_dir = self._determine_turn_direction(
                         telem_df, ev["Timestamp"], window_sec=30.0
                     )
@@ -254,7 +260,7 @@ class ReferenceTrajectoryGenerator:
                 hdg_diff = hdg_diff_shortest
 
             # Calculate turn rate at max bank for current continuous altitude
-            max_turn_rate = self.calculate_turn_rate(curr_alt, self.max_bank)
+            max_turn_rate = self.calculate_turn_rate(curr_alt, self.max_bank, current_ias=round(curr_ias))
 
             # Roll-out lead angle: At 5 deg/s roll rate, rolling out from max_bank takes (max_bank / roll_rate) sec.
             # Average turn rate during linear roll-out phase is 0.5 * max_turn_rate.
@@ -280,7 +286,7 @@ class ReferenceTrajectoryGenerator:
             curr_bank += np.clip(bank_err, -max_bank_change, max_bank_change)
 
             # Instantaneous Turn Rate based on exact continuous bank angle and altitude
-            actual_turn_rate = self.calculate_turn_rate(curr_alt, curr_bank)
+            actual_turn_rate = self.calculate_turn_rate(curr_alt, curr_bank, current_ias=round(curr_ias))
             turn_dir = np.sign(curr_bank) if curr_bank != 0 else (np.sign(hdg_diff) if hdg_diff != 0 else 1.0)
             curr_hdg = (curr_hdg + turn_dir * actual_turn_rate * dt) % 360.0
 
