@@ -1,148 +1,183 @@
-import ctypes
-import os
+import asyncio
+import json
+import random
 import sys
 import time
-import random
 from datetime import datetime
 
-# Force Working Directory to Script Folder
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(SCRIPT_DIR)
-
-# Self-Elevating Admin Wrapper
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
-        return False
-
-if not is_admin():
-    print("Requesting Administrator privileges to hook into FSUIPC7...")
-    script_path = os.path.abspath(sys.argv[0])
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{script_path}"', SCRIPT_DIR, 1)
-    sys.exit(0)
-
-# Dependency Check
 try:
-    import fsuipc
+    import websockets
 except ImportError:
-    print("\n[ERROR] The 'fsuipc' library is not installed.")
-    print("Please open Command Prompt and run: pip install fsuipc")
+    print("[ERROR] 'websockets' library is missing.")
+    print("Please open Command Prompt and run: pip install websockets")
     input("\nPress Enter to exit...")
     sys.exit(1)
 
+# FSUIPC7 WebSocket Verified Settings
+FSUIPC_WS_URI = "ws://localhost:2048/fsuipc/"
+SUBPROTOCOLS = ["fsuipc"]
 
-def main():
-    print("=====================================================")
-    print("  MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)  ")
-    print("=====================================================")
-    print("Attempting to connect to FSUIPC7...")
+# FSUIPC WASM RPN Offset Settings
+OFFSET_WASM_RPN = int("0x7C50", 16)  # 31824
+GROUP_NAME = "A310ControlGroup"
+VAR_NAME = "rpn_buffer"
 
-    ipc = None
+# iniBuilds A310 Flight Profile & Target Settings (FL120 - FL240)
+TARGET_LVAR = "A310_Airspeed_Dial"
+MIN_SPEED_KTS = 250
+MAX_SPEED_KTS = 315
+MIN_SPEED_DELTA = 12       # Minimum change required per event
+SEC_PER_KNOT_DELTA = 1.2   # ~30s transition for a 25kt shift
+MIN_PAD_SEC = 15           # Buffer hold time after target speed is reached
+MAX_PAD_SEC = 45
+
+
+async def declare_rpn_group(ws) -> bool:
+    """Declares the 0x7C50 WASM string buffer group with FSUIPC WebSocket server."""
+    payload = {
+        "command": "offsets.declare",
+        "name": GROUP_NAME,
+        "offsets": [
+            {
+                "name": VAR_NAME,
+                "address": OFFSET_WASM_RPN,
+                "type": "string",
+                "size": 256,
+            }
+        ],
+    }
+    try:
+        await ws.send(json.dumps(payload))
+        res_raw = await asyncio.wait_for(ws.recv(), timeout=3.0)
+        res = json.loads(res_raw)
+        return res.get("success", False)
+    except Exception as err:
+        print(f"[ERROR] Group declaration failed: {err}")
+        return False
+
+
+async def send_rpn_command(ws, rpn_code: str):
+    """Dispatches RPN Calculator Code via declared FSUIPC offset group."""
+    payload = {
+        "command": "offsets.write",
+        "name": GROUP_NAME,
+        "offsets": [
+            {
+                "name": VAR_NAME,
+                "value": rpn_code,
+            }
+        ],
+    }
+    try:
+        await ws.send(json.dumps(payload))
+        # Drain the ACK response frame from FSUIPC to keep socket buffer clean
+        await asyncio.wait_for(ws.recv(), timeout=2.0)
+    except Exception as err:
+        print(f"[ERROR] Failed to dispatch RPN command: {err}")
+
+
+async def main():
+    print("=====================================================")
+    print("  MSFS2020 Dynamic Speed Disruptor (A310 / WebSocket)")
+    print("=====================================================")
+    print(f"Connecting to FSUIPC7 at {FSUIPC_WS_URI}...")
+
+    ws = None
     for attempt in range(1, 6):
         try:
-            # Initialize FSUIPC IPC Connection
-            ipc = fsuipc.FSUIPC()
-            print("-> Connected to FSUIPC7 successfully!")
+            ws = await websockets.connect(
+                FSUIPC_WS_URI, subprotocols=SUBPROTOCOLS, open_timeout=5
+            )
+            print("-> [CONNECTED] FSUIPC7 WebSocket Handshake successful!")
             break
         except Exception as e:
-            print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7... ({e})")
-            time.sleep(2.0)
+            print(f"   [Attempt {attempt}/5] Waiting for server... ({e})")
+            await asyncio.sleep(2.0)
 
-    if ipc is None:
+    if ws is None:
         print("\n[CONNECTION FAILED]")
-        print("Ensure MSFS2020 and FSUIPC7.exe are both running with the WASM module enabled.")
+        print("Ensure FSUIPC7 and MSFS2020 are running.")
         input("\nPress Enter to exit...")
         return
 
-    def send_fsuipc_rpn(rpn_code: str):
-        """
-        Sends RPN Calculator Code to MSFS via FSUIPC7 WASM Offset 0x7C50.
-        Strings written here not starting with L:, H:, or P: are executed directly as RPN.
-        """
-        try:
-            # Ensure null-terminated string under 72 bytes limit for 0x7C50
-            code_bytes = rpn_code.encode("utf-8")[:71] + b"\x00"
-            ipc.write([(0x7C50, f"{len(code_bytes)}s", code_bytes)])
-        except Exception as err:
-            print(f"[ERROR] FSUIPC write failed: {err}")
-
-    # Configuration for A310 Target Lvar & Speed Envelope (FL120 - FL240)
-    TARGET_LVAR = "A310_Airspeed_Dial"
-    MIN_SPEED_KTS = 250
-    MAX_SPEED_KTS = 315
-    MIN_SPEED_DELTA = 12       # Minimum change required per event
-    SEC_PER_KNOT_DELTA = 1.2   # ~30s transition for a 25kt shift in an A310
-    MIN_PAD_SEC = 15           # Hold buffer time after reaching target
-    MAX_PAD_SEC = 45
+    # Register Offset Group
+    print("-> Registering WASM RPN Offset Group (0x7C50)...")
+    if not await declare_rpn_group(ws):
+        print("[CRITICAL ERROR] Failed to declare offset group with FSUIPC.")
+        await ws.close()
+        input("\nPress Enter to exit...")
+        return
+    print("-> Offset Group registered successfully!")
 
     # Startup pause setup
     STARTUP_DELAY_SEC = 60
-    print(f"\n[STARTUP PAUSE] Holding for {STARTUP_DELAY_SEC} seconds to allow cockpit setup...")
+    print(
+        f"\n[STARTUP PAUSE] Holding for {STARTUP_DELAY_SEC} seconds to allow cockpit setup..."
+    )
 
     try:
         for remaining in range(STARTUP_DELAY_SEC, 0, -1):
-            sys.stdout.write(f"\r  Disruptor active in: {remaining:2d}s (Press Ctrl+C to cancel)... ")
+            sys.stdout.write(
+                f"\r  Disruptor active in: {remaining:2d}s (Press Ctrl+C to cancel)... "
+            )
             sys.stdout.flush()
-            time.sleep(1)
+            await asyncio.sleep(1)
         print("\n")
-    except KeyboardInterrupt:
+    except asyncio.CancelledError:
         print("\n\n[CANCELLED] Script aborted during setup pause.")
-        ipc.close()
+        await ws.close()
         return
 
     # Initial state setup
     current_target_speed = 293
-    send_fsuipc_rpn(f"{current_target_speed} (>L:{TARGET_LVAR})")
+    await send_rpn_command(ws, f"{current_target_speed} (>L:{TARGET_LVAR})")
 
     print(f"[DISRUPTOR ACTIVE]")
-    print(f"  Target variable: L:{TARGET_LVAR}")
-    print(f"  Initial AP Speed set to: {current_target_speed} kts")
+    print(f"  Target Variable : L:{TARGET_LVAR}")
+    print(f"  Initial AP Speed: {current_target_speed} kts")
     print("\nPress Ctrl+C in this window to stop.\n")
 
     event_count = 0
     try:
         while True:
-            # 1. Pick a new speed with a meaningful delta
+            # 1. Pick a new target speed with a meaningful delta
             new_speed = current_target_speed
             while abs(new_speed - current_target_speed) < MIN_SPEED_DELTA:
                 new_speed = random.randint(MIN_SPEED_KTS, MAX_SPEED_KTS)
 
             speed_delta = abs(new_speed - current_target_speed)
 
-            # 2. Calculate dynamic delay: transition time + random buffer
+            # 2. Dynamic interval: transition time + random buffer
             transition_time = speed_delta * SEC_PER_KNOT_DELTA
             random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
             total_interval = round(transition_time + random_buffer, 1)
 
-            # 3. Fire RPN code to A310 FCU via FSUIPC7 WASM (0x7C50)
+            # 3. Dispatch RPN to A310 FCU
             rpn_cmd = f"{new_speed} (>L:{TARGET_LVAR})"
-            send_fsuipc_rpn(rpn_cmd)
+            await send_rpn_command(ws, rpn_cmd)
 
             now = datetime.now().strftime("%H:%M:%S")
             event_count += 1
-            print(f"[{now}] Event #{event_count}: Target Speed -> {new_speed} kts (Δ {speed_delta} kts) | Holding {total_interval}s")
+            print(
+                f"[{now}] Event #{event_count}: Target Speed -> {new_speed} kts (Δ {speed_delta} kts) | Holding {total_interval}s"
+            )
 
             current_target_speed = new_speed
 
-            # 4. Non-blocking delay loop for responsive Ctrl+C exit
-            start_hold = time.time()
-            while (time.time() - start_hold) < total_interval:
-                time.sleep(0.5)
+            # 4. Non-blocking hold loop
+            await asyncio.sleep(total_interval)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
     finally:
-        try:
-            ipc.close()
-        except Exception:
-            pass
-        input("\nPress Enter to close this window...")
+        await ws.close()
+
 
 if __name__ == "__main__":
     try:
-        main()
-    except BaseException as err:
-        print(f"\n\n[CRITICAL ERROR] The script encountered a fatal crash:")
-        print(f"Details: {err}")
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except Exception as err:
+        print(f"\n\n[CRITICAL ERROR] Script crashed: {err}")
         input("\nPress Enter to exit...")
