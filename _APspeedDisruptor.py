@@ -24,50 +24,43 @@ if not is_admin():
 
 # Dependency Check
 try:
-    import pyuipc
+    import fsuipc
 except ImportError:
-    print("\n[ERROR] The 'pyuipc' library is not installed.")
-    print("Please open Command Prompt and run: pip install pyuipc")
+    print("\n[ERROR] The 'fsuipc' library is not installed.")
+    print("Please open Command Prompt and run: pip install fsuipc")
     input("\nPress Enter to exit...")
     sys.exit(1)
-
-
-def send_fsuipc_rpn(rpn_code: str):
-    """
-    Sends RPN Calculator Code to MSFS via FSUIPC7 Offset 0x0D70.
-    """
-    try:
-        # Convert RPN string to null-terminated byte string
-        code_bytes = rpn_code.encode("utf-8") + b"\x00"
-        
-        # 0x0D70 is FSUIPC7's string offset for MSFS Calculator Code Execution
-        pyuipc.write([(0x0D70, "c", len(code_bytes), code_bytes)])
-    except pyuipc.FSUIPCError as err:
-        print(f"[ERROR] FSUIPC write failed: {err}")
-
-
-def connect_fsuipc():
-    """Attempts connection to running FSUIPC7 process."""
-    for attempt in range(1, 6):
-        try:
-            pyuipc.open(1)  # 1 = SIM_ANY / SIM_MSFS
-            print("-> Connected to FSUIPC7 successfully!")
-            return True
-        except pyuipc.FSUIPCError as e:
-            print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7... ({e})")
-            time.sleep(2.0)
-    return False
 
 
 def main():
     print("MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)")
     print("Attempting to connect to FSUIPC7...")
 
-    if not connect_fsuipc():
+    ipc = None
+    for attempt in range(1, 6):
+        try:
+            # Initialize FSUIPC IPC Connection
+            ipc = fsuipc.FSUIPC()
+            print("-> Connected to FSUIPC7 successfully!")
+            break
+        except Exception as e:
+            print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7... ({e})")
+            time.sleep(2.0)
+
+    if ipc is None:
         print("\n[CONNECTION FAILED]")
         print("Ensure MSFS2020 and FSUIPC7.exe are both running.")
         input("\nPress Enter to exit...")
         return
+
+    def send_fsuipc_rpn(rpn_code: str):
+        """Sends RPN Calculator Code to MSFS via FSUIPC7 Offset 0x0D70."""
+        try:
+            code_bytes = rpn_code.encode("utf-8") + b"\x00"
+            # 0x0D70 executes string as MSFS Calculator Code
+            ipc.write([(0x0D70, f"{len(code_bytes)}s", code_bytes)])
+        except Exception as err:
+            print(f"[ERROR] FSUIPC write failed: {err}")
 
     # Startup pause setup
     STARTUP_DELAY_SEC = 60
@@ -81,7 +74,7 @@ def main():
         print("\n")
     except KeyboardInterrupt:
         print("\n\n[CANCELLED] Script aborted during setup pause.")
-        pyuipc.close()
+        ipc.close()
         return
 
     # Configuration for A310 (FL120 - FL240)
@@ -134,7 +127,7 @@ def main():
         print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
     finally:
         try:
-            pyuipc.close()
+            ipc.close()
         except Exception:
             pass
         input("\nPress Enter to close this window...")
