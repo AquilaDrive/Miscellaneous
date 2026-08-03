@@ -22,45 +22,96 @@ if not is_admin():
     ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{script_path}"', SCRIPT_DIR, 1)
     sys.exit(0)
 
-# Dependency Check
-try:
-    import fsuipc
-except ImportError:
-    print("\n[ERROR] The 'fsuipc' library is not installed.")
-    print("Please open Command Prompt and run: pip install fsuipc")
-    input("\nPress Enter to exit...")
-    sys.exit(1)
+
+class FSUIPC7Direct:
+    """Pure Python FSUIPC7 IPC connector using Windows Shared Memory (ctypes)."""
+    FILE_MAP_WRITE = 0x0002
+    WM_USER = 0x0400
+
+    def __init__(self):
+        self.hwnd = None
+        self.h_map = None
+        self.p_view = None
+        self.msg_id = None
+
+    def connect(self):
+        # 1. Find FSUIPC7 Window
+        self.hwnd = ctypes.windll.user32.FindWindowA(b"FS98MAIN", None)
+        if not self.hwnd:
+            return False
+
+        # 2. Register FSUIPC Message ID
+        self.msg_id = ctypes.windll.user32.RegisterWindowMessageA(b"FSUIPC_MSG")
+        if not self.msg_id:
+            self.msg_id = self.WM_USER + 1
+
+        # 3. Open Memory Mapping (FSUIPC64_Memory)
+        self.h_map = ctypes.windll.kernel32.OpenFileMappingA(self.FILE_MAP_WRITE, False, b"FSUIPC64_Memory")
+        if not self.h_map:
+            self.h_map = ctypes.windll.kernel32.OpenFileMappingA(self.FILE_MAP_WRITE, False, b"FSUIPC_Memory")
+
+        if not self.h_map:
+            return False
+
+        # 4. Map View of Memory
+        self.p_view = ctypes.windll.kernel32.MapViewOfFile(self.h_map, self.FILE_MAP_WRITE, 0, 0, 0)
+        return bool(self.p_view)
+
+    def send_rpn(self, rpn_str: str):
+        """Sends RPN Calculator Code string to Offset 0x0D70."""
+        if not self.p_view:
+            return
+
+        code_bytes = rpn_str.encode("utf-8") + b"\x00"
+        data_len = len(code_bytes)
+
+        # FSUIPC Write Data Block Header
+        # Header size = 16 bytes: [Total Data Size, Error, Offset (0x0D70), Data Size]
+        header = (ctypes.c_uint32 * 4)(
+            16 + data_len + 8,
+            0,
+            0x0D70,
+            data_len
+        )
+
+        # Write Header and String to Shared Memory
+        ctypes.memmove(self.p_view, header, 16)
+        ctypes.memmove(self.p_view + 16, code_bytes, data_len)
+
+        # Write 8-byte Terminator (Offset 0, Size 0)
+        terminator = (ctypes.c_uint32 * 2)(0, 0)
+        ctypes.memmove(self.p_view + 16 + data_len, terminator, 8)
+
+        # Send WM_IPCUIPC Message to FSUIPC7
+        ctypes.windll.user32.SendMessageA(self.hwnd, self.msg_id, 1, 0)
+
+    def close(self):
+        if self.p_view:
+            ctypes.windll.kernel32.UnmapViewOfFile(self.p_view)
+        if self.h_map:
+            ctypes.windll.kernel32.CloseHandle(self.h_map)
 
 
 def main():
-    print("MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)")
+    print("MSFS2020 Dynamic Speed Disruptor (A310 / Pure Python FSUIPC)")
     print("Attempting to connect to FSUIPC7...")
 
-    ipc = None
-    for attempt in range(1, 6):
-        try:
-            # Initialize FSUIPC IPC Connection
-            ipc = fsuipc.FSUIPC()
-            print("-> Connected to FSUIPC7 successfully!")
-            break
-        except Exception as e:
-            print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7... ({e})")
-            time.sleep(2.0)
+    fsuipc = FSUIPC7Direct()
+    connected = False
 
-    if ipc is None:
+    for attempt in range(1, 6):
+        if fsuipc.connect():
+            print("-> Connected to FSUIPC7 successfully!")
+            connected = True
+            break
+        print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7.exe...")
+        time.sleep(2.0)
+
+    if not connected:
         print("\n[CONNECTION FAILED]")
         print("Ensure MSFS2020 and FSUIPC7.exe are both running.")
         input("\nPress Enter to exit...")
         return
-
-    def send_fsuipc_rpn(rpn_code: str):
-        """Sends RPN Calculator Code to MSFS via FSUIPC7 Offset 0x0D70."""
-        try:
-            code_bytes = rpn_code.encode("utf-8") + b"\x00"
-            # 0x0D70 executes string as MSFS Calculator Code
-            ipc.write([(0x0D70, f"{len(code_bytes)}s", code_bytes)])
-        except Exception as err:
-            print(f"[ERROR] FSUIPC write failed: {err}")
 
     # Startup pause setup
     STARTUP_DELAY_SEC = 60
@@ -74,7 +125,7 @@ def main():
         print("\n")
     except KeyboardInterrupt:
         print("\n\n[CANCELLED] Script aborted during setup pause.")
-        ipc.close()
+        fsuipc.close()
         return
 
     # Configuration for A310 (FL120 - FL240)
@@ -87,7 +138,7 @@ def main():
 
     # Initial state setup
     current_target_speed = 293
-    send_fsuipc_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
+    fsuipc.send_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
 
     print(f"[DISRUPTOR ACTIVE]")
     print(f"  Initial AP Speed set to: {current_target_speed} kts")
@@ -110,7 +161,7 @@ def main():
 
             # 3. Fire RPN code to A310 FCU via FSUIPC7
             rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
-            send_fsuipc_rpn(rpn_cmd)
+            fsuipc.send_rpn(rpn_cmd)
 
             now = datetime.now().strftime("%H:%M:%S")
             event_count += 1
@@ -126,10 +177,7 @@ def main():
     except KeyboardInterrupt:
         print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
     finally:
-        try:
-            ipc.close()
-        except Exception:
-            pass
+        fsuipc.close()
         input("\nPress Enter to close this window...")
 
 if __name__ == "__main__":
