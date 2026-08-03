@@ -104,8 +104,8 @@ def main():
             while not sm.quit:
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
-                ias_raw = aq.get("AIRSPEED INDICATED")
-                ap_spd_raw = aq.get("AUTOPILOT AIRSPEED HOLD VAR")
+                ias_raw = aq.get("AIRSPEED_INDICATED")
+                ap_spd_raw = aq.get("AUTOPILOT_AIRSPEED_HOLD_VAR")
                 alt = aq.get("INDICATED_ALTITUDE")
                 vs = aq.get("VERTICAL_SPEED")
                 pitch_raw = aq.get("PLANE_PITCH_DEGREES")
