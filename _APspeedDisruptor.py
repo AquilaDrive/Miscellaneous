@@ -22,7 +22,7 @@ MAX_SPEED_KTS = 315
 MIN_SPEED_DELTA = 12       # Minimum change required per event
 SEC_PER_KNOT_DELTA = 1.2   # ~30s transition for a 25kt shift
 MIN_PAD_SEC = 15           # Buffer hold time after target speed is reached
-MAX_PAD_SEC = 45
+MAX_PAD_SEC = 150
 
 
 async def declare_rpn_group(ws) -> bool:
