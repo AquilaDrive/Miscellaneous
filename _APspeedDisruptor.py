@@ -17,88 +17,62 @@ def is_admin():
         return False
 
 if not is_admin():
-    print("Requesting Administrator privileges to hook into MSFS2020...")
+    print("Requesting Administrator privileges to hook into FSUIPC7...")
     script_path = os.path.abspath(sys.argv[0])
     ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{script_path}"', SCRIPT_DIR, 1)
     sys.exit(0)
 
 # Dependency Check
 try:
-    from SimConnect import SimConnect
+    import pyuipc
 except ImportError:
-    print("\n[ERROR] The 'SimConnect' library is not installed.")
-    print("Please open Command Prompt and run: pip install SimConnect")
+    print("\n[ERROR] The 'pyuipc' library is not installed.")
+    print("Please open Command Prompt and run: pip install pyuipc")
     input("\nPress Enter to exit...")
     sys.exit(1)
 
 
-class MobiFlightBridge:
-    """Dispatches raw RPN Calculator Code to the MobiFlight WASM Module."""
-    CLIENT_DATA_NAME = "MobiFlight.Command"
-    CLIENT_DATA_ID = 1
-    DATA_DEFINITION_ID = 1
+def send_fsuipc_rpn(rpn_code: str):
+    """
+    Sends RPN Calculator Code to MSFS via FSUIPC7 Offset 0x0D70.
+    """
+    try:
+        # Convert RPN string to null-terminated byte string
+        code_bytes = rpn_code.encode("utf-8") + b"\x00"
+        
+        # 0x0D70 is FSUIPC7's string offset for MSFS Calculator Code Execution
+        pyuipc.write([(0x0D70, "c", len(code_bytes), code_bytes)])
+    except pyuipc.FSUIPCError as err:
+        print(f"[ERROR] FSUIPC write failed: {err}")
 
-    def __init__(self, sm):
-        self.sm = sm
-        self._setup_client_data()
 
-    def _setup_client_data(self):
+def connect_fsuipc():
+    """Attempts connection to running FSUIPC7 process."""
+    for attempt in range(1, 6):
         try:
-            hSimConnect = self.sm.hSimConnect
-            ctypes.windll.SimConnect.SimConnect_MapClientDataNameToID(
-                hSimConnect, self.CLIENT_DATA_NAME.encode("utf-8"), self.CLIENT_DATA_ID
-            )
-            ctypes.windll.SimConnect.SimConnect_AddToClientDataDefinition(
-                hSimConnect, self.DATA_DEFINITION_ID, 0, 1024, 0, 0
-            )
-        except Exception as e:
-            print(f"[WARN] MobiFlight setup warning: {e}")
-
-    def send_rpn(self, rpn_string: str):
-        """Executes RPN string inside MSFS gauge engine."""
-        try:
-            hSimConnect = self.sm.hSimConnect
-            buffer = ctypes.create_string_buffer(rpn_string.encode("utf-8"), 1024)
-            ctypes.windll.SimConnect.SimConnect_SetClientData(
-                hSimConnect,
-                self.CLIENT_DATA_ID,
-                self.DATA_DEFINITION_ID,
-                0,  # SIMCONNECT_CLIENT_DATA_SET_FLAG_DEFAULT
-                0,
-                1024,
-                buffer
-            )
-        except Exception as e:
-            print(f"[ERROR] Failed to dispatch RPN command: {e}")
+            pyuipc.open(1)  # 1 = SIM_ANY / SIM_MSFS
+            print("-> Connected to FSUIPC7 successfully!")
+            return True
+        except pyuipc.FSUIPCError as e:
+            print(f"   [Attempt {attempt}/5] Waiting for FSUIPC7... ({e})")
+            time.sleep(2.0)
+    return False
 
 
 def main():
-    print("MSFS2020 Dynamic Speed Disruptor (A310 / MobiFlight WASM)")
-    print("Attempting to connect to MSFS2020...")
+    print("MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)")
+    print("Attempting to connect to FSUIPC7...")
 
-    sm = None
-    mf = None
-
-    for attempt in range(1, 6):
-        try:
-            sm = SimConnect()
-            mf = MobiFlightBridge(sm)
-            print("-> Connected to Flight Simulator & MobiFlight WASM successfully!")
-            break
-        except Exception as e:
-            print(f"   [Attempt {attempt}/5] Waiting for sim... ({e})")
-            time.sleep(2.0)
-
-    if sm is None or mf is None:
+    if not connect_fsuipc():
         print("\n[CONNECTION FAILED]")
-        print("Ensure MSFS2020 is running, you are inside an active flight, and MobiFlight WASM is in Community folder.")
+        print("Ensure MSFS2020 and FSUIPC7.exe are both running.")
         input("\nPress Enter to exit...")
         return
 
-    # Startup delay setup
+    # Startup pause setup
     STARTUP_DELAY_SEC = 60
     print(f"\n[STARTUP PAUSE] Holding for {STARTUP_DELAY_SEC} seconds to allow cockpit setup...")
-    
+
     try:
         for remaining in range(STARTUP_DELAY_SEC, 0, -1):
             sys.stdout.write(f"\r  Disruptor active in: {remaining:2d}s (Press Ctrl+C to cancel)... ")
@@ -107,6 +81,7 @@ def main():
         print("\n")
     except KeyboardInterrupt:
         print("\n\n[CANCELLED] Script aborted during setup pause.")
+        pyuipc.close()
         return
 
     # Configuration for A310 (FL120 - FL240)
@@ -119,7 +94,7 @@ def main():
 
     # Initial state setup
     current_target_speed = 293
-    mf.send_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
+    send_fsuipc_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
 
     print(f"[DISRUPTOR ACTIVE]")
     print(f"  Initial AP Speed set to: {current_target_speed} kts")
@@ -127,7 +102,7 @@ def main():
 
     event_count = 0
     try:
-        while not sm.quit:
+        while True:
             # 1. Pick a new speed with a meaningful delta
             new_speed = current_target_speed
             while abs(new_speed - current_target_speed) < MIN_SPEED_DELTA:
@@ -140,9 +115,9 @@ def main():
             random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
             total_interval = round(transition_time + random_buffer, 1)
 
-            # 3. Fire RPN code directly to A310 FCU
-            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE, Number)"
-            mf.send_rpn(rpn_cmd)
+            # 3. Fire RPN code to A310 FCU via FSUIPC7
+            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
+            send_fsuipc_rpn(rpn_cmd)
 
             now = datetime.now().strftime("%H:%M:%S")
             event_count += 1
@@ -158,6 +133,10 @@ def main():
     except KeyboardInterrupt:
         print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
     finally:
+        try:
+            pyuipc.close()
+        except Exception:
+            pass
         input("\nPress Enter to close this window...")
 
 if __name__ == "__main__":
