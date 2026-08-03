@@ -141,7 +141,7 @@ def main():
             total_interval = round(transition_time + random_buffer, 1)
 
             # 3. Fire RPN code directly to A310 FCU
-            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
+            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE, Number)"
             mf.send_rpn(rpn_cmd)
 
             now = datetime.now().strftime("%H:%M:%S")
