@@ -4,14 +4,7 @@ import random
 import sys
 import time
 from datetime import datetime
-
-try:
-    import websockets
-except ImportError:
-    print("[ERROR] 'websockets' library is missing.")
-    print("Please open Command Prompt and run: pip install websockets")
-    input("\nPress Enter to exit...")
-    sys.exit(1)
+import websockets
 
 # FSUIPC7 WebSocket Verified Settings
 FSUIPC_WS_URI = "ws://localhost:2048/fsuipc/"
