@@ -43,14 +43,11 @@ class MobiFlightBridge:
         self._setup_client_data()
 
     def _setup_client_data(self):
-        # Maps the MobiFlight Command Data Area via underlying SimConnect DLL
         try:
             hSimConnect = self.sm.hSimConnect
-            # Map Client Data Area
             ctypes.windll.SimConnect.SimConnect_MapClientDataNameToID(
                 hSimConnect, self.CLIENT_DATA_NAME.encode("utf-8"), self.CLIENT_DATA_ID
             )
-            # Create Data Definition for 1024-byte string buffer
             ctypes.windll.SimConnect.SimConnect_AddToClientDataDefinition(
                 hSimConnect, self.DATA_DEFINITION_ID, 0, 1024, 0, 0
             )
@@ -98,6 +95,20 @@ def main():
         input("\nPress Enter to exit...")
         return
 
+    # Startup delay setup
+    STARTUP_DELAY_SEC = 60
+    print(f"\n[STARTUP PAUSE] Holding for {STARTUP_DELAY_SEC} seconds to allow cockpit setup...")
+    
+    try:
+        for remaining in range(STARTUP_DELAY_SEC, 0, -1):
+            sys.stdout.write(f"\r  Disruptor active in: {remaining:2d}s (Press Ctrl+C to cancel)... ")
+            sys.stdout.flush()
+            time.sleep(1)
+        print("\n")
+    except KeyboardInterrupt:
+        print("\n\n[CANCELLED] Script aborted during setup pause.")
+        return
+
     # Configuration for A310 (FL120 - FL240)
     MIN_SPEED_KTS = 250
     MAX_SPEED_KTS = 315
@@ -108,11 +119,9 @@ def main():
 
     # Initial state setup
     current_target_speed = 293
-    
-    # Send initial command to A310 FCU LVar
     mf.send_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
 
-    print(f"\n[DISRUPTOR ACTIVE]")
+    print(f"[DISRUPTOR ACTIVE]")
     print(f"  Initial AP Speed set to: {current_target_speed} kts")
     print("\nPress Ctrl+C in this window to stop.\n")
 
@@ -132,7 +141,6 @@ def main():
             total_interval = round(transition_time + random_buffer, 1)
 
             # 3. Fire RPN code directly to A310 FCU
-            # Update target value LVar
             rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
             mf.send_rpn(rpn_cmd)
 
