@@ -24,7 +24,7 @@ if not is_admin():
 
 # Dependency Check
 try:
-    from SimConnect import SimConnect, AircraftEvents
+    from SimConnect import SimConnect
 except ImportError:
     print("\n[ERROR] The 'SimConnect' library is not installed.")
     print("Please open Command Prompt and run: pip install SimConnect")
@@ -32,28 +32,69 @@ except ImportError:
     sys.exit(1)
 
 
+class MobiFlightBridge:
+    """Dispatches raw RPN Calculator Code to the MobiFlight WASM Module."""
+    CLIENT_DATA_NAME = "MobiFlight.Command"
+    CLIENT_DATA_ID = 1
+    DATA_DEFINITION_ID = 1
+
+    def __init__(self, sm):
+        self.sm = sm
+        self._setup_client_data()
+
+    def _setup_client_data(self):
+        # Maps the MobiFlight Command Data Area via underlying SimConnect DLL
+        try:
+            hSimConnect = self.sm.hSimConnect
+            # Map Client Data Area
+            ctypes.windll.SimConnect.SimConnect_MapClientDataNameToID(
+                hSimConnect, self.CLIENT_DATA_NAME.encode("utf-8"), self.CLIENT_DATA_ID
+            )
+            # Create Data Definition for 1024-byte string buffer
+            ctypes.windll.SimConnect.SimConnect_AddToClientDataDefinition(
+                hSimConnect, self.DATA_DEFINITION_ID, 0, 1024, 0, 0
+            )
+        except Exception as e:
+            print(f"[WARN] MobiFlight setup warning: {e}")
+
+    def send_rpn(self, rpn_string: str):
+        """Executes RPN string inside MSFS gauge engine."""
+        try:
+            hSimConnect = self.sm.hSimConnect
+            buffer = ctypes.create_string_buffer(rpn_string.encode("utf-8"), 1024)
+            ctypes.windll.SimConnect.SimConnect_SetClientData(
+                hSimConnect,
+                self.CLIENT_DATA_ID,
+                self.DATA_DEFINITION_ID,
+                0,  # SIMCONNECT_CLIENT_DATA_SET_FLAG_DEFAULT
+                0,
+                1024,
+                buffer
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to dispatch RPN command: {e}")
+
+
 def main():
-    print("MSFS2020 Dynamic Speed Disruptor")
+    print("MSFS2020 Dynamic Speed Disruptor (A310 / MobiFlight WASM)")
     print("Attempting to connect to MSFS2020...")
 
     sm = None
-    ae = None
-    set_ap_speed = None
-    
+    mf = None
+
     for attempt in range(1, 6):
         try:
             sm = SimConnect()
-            ae = AircraftEvents(sm)
-            set_ap_speed = ae.find("AP_SPD_VAR_SET")
-            print("-> Connected to Flight Simulator successfully!")
+            mf = MobiFlightBridge(sm)
+            print("-> Connected to Flight Simulator & MobiFlight WASM successfully!")
             break
         except Exception as e:
             print(f"   [Attempt {attempt}/5] Waiting for sim... ({e})")
             time.sleep(2.0)
 
-    if sm is None or set_ap_speed is None:
+    if sm is None or mf is None:
         print("\n[CONNECTION FAILED]")
-        print("Ensure MSFS2020 is running and you are inside an active flight.")
+        print("Ensure MSFS2020 is running, you are inside an active flight, and MobiFlight WASM is in Community folder.")
         input("\nPress Enter to exit...")
         return
 
@@ -65,9 +106,11 @@ def main():
     MIN_PAD_SEC = 15           # Buffer hold time after target is reached
     MAX_PAD_SEC = 45
 
-    # Initial state
+    # Initial state setup
     current_target_speed = 293
-    set_ap_speed(current_target_speed)
+    
+    # Send initial command to A310 FCU LVar
+    mf.send_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
 
     print(f"\n[DISRUPTOR ACTIVE]")
     print(f"  Initial AP Speed set to: {current_target_speed} kts")
@@ -80,18 +123,20 @@ def main():
             new_speed = current_target_speed
             while abs(new_speed - current_target_speed) < MIN_SPEED_DELTA:
                 new_speed = random.randint(MIN_SPEED_KTS, MAX_SPEED_KTS)
-            
+
             speed_delta = abs(new_speed - current_target_speed)
-            
+
             # 2. Calculate dynamic delay: transition time + random buffer
             transition_time = speed_delta * SEC_PER_KNOT_DELTA
             random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
             total_interval = round(transition_time + random_buffer, 1)
 
-            # 3. Fire event directly to MSFS
-            set_ap_speed(new_speed)
-            now = datetime.now().strftime("%H:%M:%S")
+            # 3. Fire RPN code directly to A310 FCU
+            # Update target value LVar
+            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
+            mf.send_rpn(rpn_cmd)
 
+            now = datetime.now().strftime("%H:%M:%S")
             event_count += 1
             print(f"[{now}] Event #{event_count}: Target Speed -> {new_speed} kts (Δ {speed_delta} kts) | Holding {total_interval}s")
 
