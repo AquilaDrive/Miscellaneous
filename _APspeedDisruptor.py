@@ -33,7 +33,9 @@ except ImportError:
 
 
 def main():
-    print("MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)")
+    print("=====================================================")
+    print("  MSFS2020 Dynamic Speed Disruptor (A310 / FSUIPC7)  ")
+    print("=====================================================")
     print("Attempting to connect to FSUIPC7...")
 
     ipc = None
@@ -49,18 +51,30 @@ def main():
 
     if ipc is None:
         print("\n[CONNECTION FAILED]")
-        print("Ensure MSFS2020 and FSUIPC7.exe are both running.")
+        print("Ensure MSFS2020 and FSUIPC7.exe are both running with the WASM module enabled.")
         input("\nPress Enter to exit...")
         return
 
     def send_fsuipc_rpn(rpn_code: str):
-        """Sends RPN Calculator Code to MSFS via FSUIPC7 Offset 0x0D70."""
+        """
+        Sends RPN Calculator Code to MSFS via FSUIPC7 WASM Offset 0x7C50.
+        Strings written here not starting with L:, H:, or P: are executed directly as RPN.
+        """
         try:
-            code_bytes = rpn_code.encode("utf-8") + b"\x00"
-            # 0x0D70 executes string as MSFS Calculator Code
-            ipc.write([(0x0D70, f"{len(code_bytes)}s", code_bytes)])
+            # Ensure null-terminated string under 72 bytes limit for 0x7C50
+            code_bytes = rpn_code.encode("utf-8")[:71] + b"\x00"
+            ipc.write([(0x7C50, f"{len(code_bytes)}s", code_bytes)])
         except Exception as err:
             print(f"[ERROR] FSUIPC write failed: {err}")
+
+    # Configuration for A310 Target Lvar & Speed Envelope (FL120 - FL240)
+    TARGET_LVAR = "A310_Airspeed_Dial"
+    MIN_SPEED_KTS = 250
+    MAX_SPEED_KTS = 315
+    MIN_SPEED_DELTA = 12       # Minimum change required per event
+    SEC_PER_KNOT_DELTA = 1.2   # ~30s transition for a 25kt shift in an A310
+    MIN_PAD_SEC = 15           # Hold buffer time after reaching target
+    MAX_PAD_SEC = 45
 
     # Startup pause setup
     STARTUP_DELAY_SEC = 60
@@ -77,19 +91,12 @@ def main():
         ipc.close()
         return
 
-    # Configuration for A310 (FL120 - FL240)
-    MIN_SPEED_KTS = 250
-    MAX_SPEED_KTS = 315
-    MIN_SPEED_DELTA = 12       # Minimum change required per event
-    SEC_PER_KNOT_DELTA = 1.2   # ~30s for a 25kt shift in an A310
-    MIN_PAD_SEC = 15           # Buffer hold time after target is reached
-    MAX_PAD_SEC = 45
-
     # Initial state setup
     current_target_speed = 293
-    send_fsuipc_rpn(f"{current_target_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)")
+    send_fsuipc_rpn(f"{current_target_speed} (>L:{TARGET_LVAR})")
 
     print(f"[DISRUPTOR ACTIVE]")
+    print(f"  Target variable: L:{TARGET_LVAR}")
     print(f"  Initial AP Speed set to: {current_target_speed} kts")
     print("\nPress Ctrl+C in this window to stop.\n")
 
@@ -108,8 +115,8 @@ def main():
             random_buffer = random.randint(MIN_PAD_SEC, MAX_PAD_SEC)
             total_interval = round(transition_time + random_buffer, 1)
 
-            # 3. Fire RPN code to A310 FCU via FSUIPC7
-            rpn_cmd = f"{new_speed} (>L:A310_FCU_SPEED_SELECT_VALUE)"
+            # 3. Fire RPN code to A310 FCU via FSUIPC7 WASM (0x7C50)
+            rpn_cmd = f"{new_speed} (>L:{TARGET_LVAR})"
             send_fsuipc_rpn(rpn_cmd)
 
             now = datetime.now().strftime("%H:%M:%S")
