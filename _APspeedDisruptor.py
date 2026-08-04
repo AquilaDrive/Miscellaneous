@@ -1,5 +1,7 @@
 import asyncio
+import csv
 import json
+import os
 import random
 import sys
 import time
@@ -70,6 +72,16 @@ async def send_rpn_command(ws, rpn_code: str):
 
 
 async def main():
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    csv_filename = os.path.join(SCRIPT_DIR, f"ap_speed_log_{timestamp_str}.csv")
+
+    headers = ["Timestamp", "AP_Target_Speed_Kts", "Speed_Delta_Kts", "Event_Count"]
+
+    csv_file = open(csv_filename, mode='w', newline='', buffering=1)
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(headers)
+
     print("=====================================================")
     print("  MSFS2020 Dynamic Speed Disruptor (A310 / WebSocket)")
     print("=====================================================")
@@ -90,6 +102,7 @@ async def main():
     if ws is None:
         print("\n[CONNECTION FAILED]")
         print("Ensure FSUIPC7 and MSFS2020 are running.")
+        csv_file.close()
         input("\nPress Enter to exit...")
         return
 
@@ -97,6 +110,7 @@ async def main():
     print("-> Registering WASM RPN Offset Group (0x7C50)...")
     if not await declare_rpn_group(ws):
         print("[CRITICAL ERROR] Failed to declare offset group with FSUIPC.")
+        csv_file.close()
         await ws.close()
         input("\nPress Enter to exit...")
         return
@@ -118,6 +132,7 @@ async def main():
         print("\n")
     except asyncio.CancelledError:
         print("\n\n[CANCELLED] Script aborted during setup pause.")
+        csv_file.close()
         await ws.close()
         return
 
@@ -125,12 +140,15 @@ async def main():
     current_target_speed = 293
     await send_rpn_command(ws, f"{current_target_speed} (>L:{TARGET_LVAR})")
 
+    event_count = 0
+    csv_writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3], current_target_speed, 0, event_count])
+    csv_file.flush()
+
     print(f"[DISRUPTOR ACTIVE]")
     print(f"  Target Variable : L:{TARGET_LVAR}")
     print(f"  Initial AP Speed: {current_target_speed} kts")
     print("\nPress Ctrl+C in this window to stop.\n")
 
-    event_count = 0
     try:
         while True:
             # 1. Pick a new target speed with a meaningful delta
@@ -151,6 +169,9 @@ async def main():
 
             now = datetime.now().strftime("%H:%M:%S")
             event_count += 1
+            csv_writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3], new_speed, speed_delta, event_count])
+            csv_file.flush()
+
             print(
                 f"[{now}] Event #{event_count}: Target Speed -> {new_speed} kts (Δ {speed_delta} kts) | Holding {total_interval}s"
             )
@@ -163,6 +184,7 @@ async def main():
     except (KeyboardInterrupt, asyncio.CancelledError):
         print(f"\n\n[STOPPED] Disruptor closed after {event_count} speed changes.")
     finally:
+        csv_file.close()
         await ws.close()
 
 
