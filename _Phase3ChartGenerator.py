@@ -251,6 +251,16 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
         ripple_val = 0.0
         ripple_cnt = None
 
+    pitch_inputs = aln_df['Yoke_Pitch_Pct'].dropna().values if 'Yoke_Pitch_Pct' in aln_df.columns else np.array([])
+    if len(pitch_inputs) > 0:
+        above_20 = np.sum(np.abs(pitch_inputs) > 0.2)
+        pct_above_20 = (above_20 / len(pitch_inputs)) * 100.0
+        zero_crossings = np.where(np.diff(np.sign(pitch_inputs)))[0]
+        reversals_per_minute = len(zero_crossings) / ((aln_df['Timestamp'].iloc[-1] - aln_df['Timestamp'].iloc[0]).total_seconds() / 60.0)
+    else:
+        pct_above_20 = 0.0
+        reversals_per_minute = 0.0
+
     # Overall Session Envelope ToL (Average across dimensions)
     sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
     
@@ -321,15 +331,15 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_kpi_req.text(0.05, 0.91, "SESSION ENVELOPE TOLERANCE [>85%]", color='#ffffff', fontsize=11, fontweight='bold', transform=ax_kpi_req.transAxes)
     # Sub-tile positions: (x, y, title, val, color)
     tiles = [
-        (0.05, 0.56, "ALT TOL", sess_tol_alt, COLORS['Altitude']),
-        (0.52, 0.56, "HDG TOL", sess_tol_hdg, COLORS['Heading']),
-        (0.05, 0.24, "BANK TOL", sess_tol_bnk, COLORS['Bank']),
-        (0.52, 0.24, "COMBINED", sess_tol_env, COLORS['Pass'] if env_pass else COLORS['Fail'])
+        (0.05, 0.58, "ALT TOL", sess_tol_alt, COLORS['Altitude']),
+        (0.52, 0.58, "HDG TOL", sess_tol_hdg, COLORS['Heading']),
+        (0.05, 0.27, "BANK TOL", sess_tol_bnk, COLORS['Bank']),
+        (0.52, 0.27, "COMBINED", sess_tol_env, COLORS['Pass'] if env_pass else COLORS['Fail'])
     ]
     for x_pos, y_pos, label, val, color in tiles:
         # Draw uniform background sub-tile box using FancyBboxPatch
         rect = FancyBboxPatch(
-            (x_pos, y_pos), 0.43, 0.29,
+            (x_pos, y_pos), 0.43, 0.27,
             transform=ax_kpi_req.transAxes,
             facecolor='#141414',
             edgecolor='#2a2a2a',
@@ -338,23 +348,24 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
         )
         ax_kpi_req.add_patch(rect) 
         # Label Header
-        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.19, label, color='#888888', fontsize=9, fontweight='bold', transform=ax_kpi_req.transAxes)
+        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.17, label, color='#888888', fontsize=9, fontweight='bold', transform=ax_kpi_req.transAxes)
         # Metric Percentage Value & Status
         status_txt = "PASS" if val >= 85.0 else "FAIL"
-        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.05, f"{val:.1f}% [{status_txt}]", color=color, fontsize=12, fontweight='bold', transform=ax_kpi_req.transAxes)
+        ax_kpi_req.text(x_pos + 0.04, y_pos + 0.04, f"{val:.1f}% [{status_txt}]", color=color, fontsize=11.5, fontweight='bold', transform=ax_kpi_req.transAxes)
     # Status indicators & colors
     spk_status = "PASS" if spikes_pass else "FAIL"
     spk_color = COLORS['Pass'] if spikes_pass else COLORS['Fail']
     rip_status = "PASS" if ripple_pass else "FAIL"
     rip_color = COLORS['Pass'] if ripple_pass else COLORS['Fail']
     # Dedicated Line 1: Spikes with [0-2] Target
-    ax_kpi_req.text(0.05, 0.13, f"Spikes [0–2]: {spikes_val}  [{spk_status}]", color=spk_color, fontsize=10.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.17, f"Spikes [0–2]: {spikes_val}  [{spk_status}]", color=spk_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
     # Dedicated Line 2: Ripple Metrics (Count prepended before combined time if available)
     if ripple_cnt is not None:
         ripple_str = f"Ripple [< 3.0s]: {ripple_cnt} cnt | {ripple_val:.1f}s  [{rip_status}]"
     else:
         ripple_str = f"Ripple [< 3.0s]: {ripple_val:.1f}s  [{rip_status}]"
-    ax_kpi_req.text(0.05, 0.04, ripple_str, color=rip_color, fontsize=10.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.09, ripple_str, color=rip_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.01, f"Pitch Workload: {reversals_per_minute:.1f} rev/m | >20%: {pct_above_20:.1f}%", color=COLORS['Pitch'], fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
