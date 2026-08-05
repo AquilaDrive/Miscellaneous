@@ -399,7 +399,8 @@ if __name__ == '__main__':
 
         # Parse Timestamps
         aligned_df['Timestamp'] = pd.to_datetime(aligned_df['Timestamp'])
-        
+
+        default_ias_target = 300.0
         # Merge AP Speed Disruptor Target if log exists
         if disruptor_path and disruptor_path.exists():
             disruptor_df = pd.read_csv(disruptor_path)
@@ -416,6 +417,11 @@ if __name__ == '__main__':
                 on='Timestamp',
                 direction='backward'
             )
+            # Fill records prior to the first log timestamp with Phase 1 default speed
+            aligned_df['AP_Target_Speed_Kts'] = aligned_df['AP_Target_Speed_Kts'].fillna(default_ias_target)
+        else:
+            # Fallback for full duration if disruptor log is missing
+            aligned_df['AP_Target_Speed_Kts'] = default_ias_target
 
         # Compute relative flight time in minutes
         aligned_df['Time_Min'] = (
