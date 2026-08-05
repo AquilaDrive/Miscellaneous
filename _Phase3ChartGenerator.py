@@ -105,23 +105,33 @@ def unwrap_degrees(deg_series):
     return unwrapped
 
 def generate_flight_trajectory(df, ts_str, output_dir: Path):
-    fig, axes = plt.subplots(5, 1, figsize=(15, 15), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(15, 16), sharex=True)
     apply_dark_style(fig, axes)
     fig.suptitle('PHASE 3: FLIGHT TELEMETRY VS REFERENCE TRAJECTORY', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
+
+    # Common borderless header legend styling
+    leg_args = dict(
+        loc='lower right',
+        bbox_to_anchor=(1.0, 1.01),
+        ncols=2,
+        frameon=False,
+        labelcolor='#ffffff',
+        fontsize=9.5
+    )
 
     # 1. Altitude (P1 - Primary Focus)
     axes[0].plot(df['Time_Min'], df['Altitude'], label='Actual Altitude (ft)', color=COLORS['Altitude'], linewidth=1.5)
     axes[0].plot(df['Time_Min'], df['Ref_Alt'], label='Target Ref Altitude (ft)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[0].set_ylabel('Altitude (ft)', fontweight='bold')
-    axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
+    axes[0].legend(**leg_args)
 
     # 2. Vertical Speed (VSI)
     axes[1].plot(df['Time_Min'], df['VSI'], label='Actual VSI (fpm)', color=COLORS['VSI'], linewidth=1.0, alpha=0.9)
     axes[1].plot(df['Time_Min'], df['Ref_VSI'], label='Target Ref VSI (fpm)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[1].set_ylabel('VSI (fpm)', fontweight='bold')
-    axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[1].set_title('Vertical Speed Indicator (VSI) Tracking', loc='left', color='#888888', fontsize=11)
+    axes[1].legend(**leg_args)
 
     # 3. Indicated Airspeed (IAS)
     ias_col = 'IAS' if 'IAS' in df.columns else 'Indicated_Airspeed_Kts'
@@ -131,15 +141,15 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     if ref_ias_col:
         axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[2].set_ylabel('IAS (kts)', fontweight='bold')
-    axes[2].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[2].set_title('Airspeed Tracking Profile & AP Target Speed', loc='left', color='#888888', fontsize=11)
+    axes[2].legend(**leg_args)
 
     # 4. Bank Angle
     axes[3].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
     axes[3].plot(df['Time_Min'], df['Ref_Bank'], label='Target Ref Bank (±30° Turns)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[3].set_ylabel('Bank Angle (°)', fontweight='bold')
-    axes[3].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[3].set_title('Bank Angle & Roll Execution (Target: 30° in Turns)', loc='left', color='#888888', fontsize=11)
+    axes[3].legend(**leg_args)
 
     # 5. Heading (Continuous Angle Logic)
     unwrapped_hdg = unwrap_degrees(df['Heading'])
@@ -153,8 +163,8 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[4].plot(df['Time_Min'], unwrapped_ref_hdg, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[4].set_ylabel('Heading (°)', fontweight='bold')
     axes[4].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
-    axes[4].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[4].set_title('Heading Tracking Profile (Continuous Angle Logic)', loc='left', color='#888888', fontsize=11)
+    axes[4].legend(**leg_args)
     
     axes[4].yaxis.set_major_locator(MultipleLocator(90))
     axes[4].yaxis.set_major_formatter(
@@ -168,14 +178,13 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     )
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.94)
+    plt.subplots_adjust(top=0.93, hspace=0.32)  # Extra vertical spacing so header legends don't hit adjacent axes
     out_filename = f'graph_flight_trajectory_{ts_str}.png' if ts_str else 'graph_flight_trajectory.png'
     out_path = output_dir / out_filename
     fig.savefig(out_path, dpi=300, facecolor='#000000', edgecolor='none')
     plt.show()
     plt.close(fig)
     print(f"[Generated] {out_path.resolve()}")
-
 # -------------------------------------------------------------------------
 # FIGURE 2: PILOT CONTROL INPUTS
 # -------------------------------------------------------------------------
