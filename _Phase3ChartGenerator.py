@@ -373,7 +373,7 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_kpi_req.text(0.05, 0.12, ripple_str, color=rip_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # Dedicated Line 3: Pitch Workload (Reversals per Minute)
-    ax_kpi_req.text(0.05, 0.04, f"Pitch Workload [< 20.0]: {reversals_per_minute:.1f} rev/m  [{work_status}]", color=work_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.04, f"Pitch Workload [< 8.0]: {reversals_per_minute:.1f} rev/m  [{work_status}]", color=work_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
