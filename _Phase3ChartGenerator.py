@@ -68,7 +68,7 @@ COLORS = {
     'Pitch':    '#3399ff',   # Blue (matches VSI)
     'Rudder':   '#00e676',   # Green
     'IAS':      '#7f33ff',   # Deep Electric Indigo (Altitude -> VSI -> Speed Gradient)
-    'Ref':      '#888888',   # Toned-down Subdued Slate Gray
+    'Ref':      '#a0a0a0',   # Toned-down Gray
     'Pass':     '#00ff66',   # Bright Green
     'Fail':     '#ff3333'    # Bright Red
 }
