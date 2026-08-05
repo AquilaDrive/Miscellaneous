@@ -271,6 +271,7 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     env_pass    = sess_tol_env > 85.0
     spikes_pass = spikes_val <= 2
     ripple_pass = ripple_val < 3.0
+    workload_pass = reversals_per_minute <= 8.0
 
     # 3x3 Grid Layout Setup
     fig = plt.figure(figsize=(18, 13))
@@ -352,20 +353,27 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
         # Metric Percentage Value & Status
         status_txt = "PASS" if val >= 85.0 else "FAIL"
         ax_kpi_req.text(x_pos + 0.04, y_pos + 0.04, f"{val:.1f}% [{status_txt}]", color=color, fontsize=11.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+
     # Status indicators & colors
-    spk_status = "PASS" if spikes_pass else "FAIL"
-    spk_color = COLORS['Pass'] if spikes_pass else COLORS['Fail']
-    rip_status = "PASS" if ripple_pass else "FAIL"
-    rip_color = COLORS['Pass'] if ripple_pass else COLORS['Fail']
+    spk_status  = "PASS" if spikes_pass else "FAIL"
+    spk_color   = COLORS['Pass'] if spikes_pass else COLORS['Fail']
+    rip_status  = "PASS" if ripple_pass else "FAIL"
+    rip_color   = COLORS['Pass'] if ripple_pass else COLORS['Fail']
+    work_status = "PASS" if workload_pass else "FAIL"
+    work_color  = COLORS['Pass'] if workload_pass else COLORS['Fail']
+
     # Dedicated Line 1: Spikes with [0-2] Target
-    ax_kpi_req.text(0.05, 0.17, f"Spikes [0–2]: {spikes_val}  [{spk_status}]", color=spk_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.20, f"Spikes [0–2]: {spikes_val}  [{spk_status}]", color=spk_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+
     # Dedicated Line 2: Ripple Metrics (Count prepended before combined time if available)
     if ripple_cnt is not None:
         ripple_str = f"Ripple [< 3.0s]: {ripple_cnt} cnt | {ripple_val:.1f}s  [{rip_status}]"
     else:
         ripple_str = f"Ripple [< 3.0s]: {ripple_val:.1f}s  [{rip_status}]"
-    ax_kpi_req.text(0.05, 0.09, ripple_str, color=rip_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
-    ax_kpi_req.text(0.05, 0.01, f"Pitch Workload: {reversals_per_minute:.1f} rev/m | >20%: {pct_above_20:.1f}%", color=COLORS['Pitch'], fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.12, ripple_str, color=rip_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+
+    # Dedicated Line 3: Pitch Workload (Reversals per Minute)
+    ax_kpi_req.text(0.05, 0.04, f"Pitch Workload [< 20.0]: {reversals_per_minute:.1f} rev/m  [{work_status}]", color=work_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
