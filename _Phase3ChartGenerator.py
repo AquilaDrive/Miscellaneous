@@ -103,20 +103,45 @@ def unwrap_degrees(deg_series):
     unwrapped[0] = arr[0]
     unwrapped[1:] = arr[0] + np.cumsum(diff)
     return unwrapped
-    
+
 def generate_flight_trajectory(df, ts_str, output_dir: Path):
     fig, axes = plt.subplots(5, 1, figsize=(15, 15), sharex=True)
     apply_dark_style(fig, axes)
     fig.suptitle('PHASE 3: FLIGHT TELEMETRY VS REFERENCE TRAJECTORY', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
 
-    # 1. Altitude
+    # 1. Altitude (P1 - Primary Focus)
     axes[0].plot(df['Time_Min'], df['Altitude'], label='Actual Altitude (ft)', color=COLORS['Altitude'], linewidth=1.5)
     axes[0].plot(df['Time_Min'], df['Ref_Alt'], label='Target Ref Altitude (ft)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[0].set_ylabel('Altitude (ft)', fontweight='bold')
     axes[0].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
     axes[0].set_title('Altitude Tracking Profile', loc='left', color='#888888', fontsize=11)
 
-    # 2. Heading
+    # 2. Vertical Speed (VSI)
+    axes[1].plot(df['Time_Min'], df['VSI'], label='Actual VSI (fpm)', color=COLORS['VSI'], linewidth=1.0, alpha=0.9)
+    axes[1].plot(df['Time_Min'], df['Ref_VSI'], label='Target Ref VSI (fpm)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[1].set_ylabel('VSI (fpm)', fontweight='bold')
+    axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[1].set_title('Vertical Speed Indicator (VSI) Tracking', loc='left', color='#888888', fontsize=11)
+
+    # 3. Indicated Airspeed (IAS)
+    ias_col = 'IAS' if 'IAS' in df.columns else 'Indicated_Airspeed_Kts'
+    ref_ias_col = next((col for col in ['Ref_IAS', 'Ref_Speed', 'AP_Target_Speed_Kts', 'AP_Target_Speed'] if col in df.columns), None)
+
+    axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
+    if ref_ias_col:
+        axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[2].set_ylabel('IAS (kts)', fontweight='bold')
+    axes[2].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[2].set_title('Airspeed Tracking Profile & AP Target Speed', loc='left', color='#888888', fontsize=11)
+
+    # 4. Bank Angle
+    axes[3].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
+    axes[3].plot(df['Time_Min'], df['Ref_Bank'], label='Target Ref Bank (±30° Turns)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[3].set_ylabel('Bank Angle (°)', fontweight='bold')
+    axes[3].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[3].set_title('Bank Angle & Roll Execution (Target: 30° in Turns)', loc='left', color='#888888', fontsize=11)
+
+    # 5. Heading (Continuous Angle Logic)
     unwrapped_hdg = unwrap_degrees(df['Heading'])
     unwrapped_ref_hdg = unwrap_degrees(df['Ref_Hdg'])
 
@@ -124,14 +149,15 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
         offset_360 = np.round(np.nanmean(unwrapped_hdg - unwrapped_ref_hdg) / 360.0) * 360.0
         unwrapped_hdg -= offset_360
 
-    axes[1].plot(df['Time_Min'], unwrapped_hdg, label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
-    axes[1].plot(df['Time_Min'], unwrapped_ref_hdg, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
-    axes[1].set_ylabel('Heading (°)', fontweight='bold')
-    axes[1].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[1].set_title('Heading Tracking Profile (Continuous Angle Logic)', loc='left', color='#888888', fontsize=11)
+    axes[4].plot(df['Time_Min'], unwrapped_hdg, label='Actual Heading (°)', color=COLORS['Heading'], linewidth=1.5)
+    axes[4].plot(df['Time_Min'], unwrapped_ref_hdg, label='Target Ref Heading (°)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+    axes[4].set_ylabel('Heading (°)', fontweight='bold')
+    axes[4].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
+    axes[4].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
+    axes[4].set_title('Heading Tracking Profile (Continuous Angle Logic)', loc='left', color='#888888', fontsize=11)
     
-    axes[1].yaxis.set_major_locator(MultipleLocator(90))
-    axes[1].yaxis.set_major_formatter(
+    axes[4].yaxis.set_major_locator(MultipleLocator(90))
+    axes[4].yaxis.set_major_formatter(
         FuncFormatter(
             lambda x, pos: (
                 f"{int(x)}°"
@@ -141,32 +167,6 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
         )
     )
 
-    # 3. Bank Angle
-    axes[2].plot(df['Time_Min'], df['Bank'], label='Actual Bank (°)', color=COLORS['Bank'], linewidth=1.2)
-    axes[2].plot(df['Time_Min'], df['Ref_Bank'], label='Target Ref Bank (±30° Turns)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
-    axes[2].set_ylabel('Bank Angle (°)', fontweight='bold')
-    axes[2].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[2].set_title('Bank Angle & Roll Execution (Target: 30° in Turns)', loc='left', color='#888888', fontsize=11)
-
-    # 4. Vertical Speed (VSI)
-    axes[3].plot(df['Time_Min'], df['VSI'], label='Actual VSI (fpm)', color=COLORS['VSI'], linewidth=1.0, alpha=0.9)
-    axes[3].plot(df['Time_Min'], df['Ref_VSI'], label='Target Ref VSI (fpm)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
-    axes[3].set_ylabel('VSI (fpm)', fontweight='bold')
-    axes[3].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[3].set_title('Vertical Speed Indicator (VSI) Tracking', loc='left', color='#888888', fontsize=11)
-
-    # 5. Indicated Airspeed (IAS) & AP Speed Target (Placed Last)
-    ias_col = 'IAS' if 'IAS' in df.columns else 'Indicated_Airspeed_Kts'
-    ref_ias_col = next((col for col in ['Ref_IAS', 'Ref_Speed', 'AP_Target_Speed_Kts', 'AP_Target_Speed'] if col in df.columns), None)
-
-    axes[4].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
-    if ref_ias_col:
-        axes[4].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
-    axes[4].set_ylabel('IAS (kts)', fontweight='bold')
-    axes[4].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
-    axes[4].legend(loc='upper right', facecolor='#111111', edgecolor='#2a2a2a', labelcolor='#ffffff')
-    axes[4].set_title('Airspeed Tracking Profile & AP Target Speed', loc='left', color='#888888', fontsize=11)
-
     plt.tight_layout()
     plt.subplots_adjust(top=0.94)
     out_filename = f'graph_flight_trajectory_{ts_str}.png' if ts_str else 'graph_flight_trajectory.png'
@@ -175,7 +175,6 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     plt.show()
     plt.close(fig)
     print(f"[Generated] {out_path.resolve()}")
-
 
 # -------------------------------------------------------------------------
 # FIGURE 2: PILOT CONTROL INPUTS
