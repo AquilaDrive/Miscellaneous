@@ -21,48 +21,41 @@ def extract_timestamp_suffix(filename: str) -> str:
     )
     return match.group(1) if match else ""
 
-
 def find_analysis_files(base_dir: Path):
-    """Finds latest aligned_telemetry_analysis and matching analysis_scorecard CSVs."""
+    """Finds latest aligned_telemetry, scorecard, and matching ap_speed_log CSVs."""
     search_dirs = [base_dir, base_dir.parent]
     aligned_files = []
     scorecard_files = []
+    disruptor_files = []
 
     for s_dir in search_dirs:
         if s_dir.exists():
             aligned_files.extend(list(s_dir.glob("aligned_telemetry_analysis*.csv")))
             scorecard_files.extend(list(s_dir.glob("analysis_scorecard*.csv")))
+            disruptor_files.extend(list(s_dir.glob("ap_speed_log*.csv")))
 
     # Deduplicate by resolved path
     aligned_files = list({p.resolve(): p for p in aligned_files}.values())
     scorecard_files = list({p.resolve(): p for p in scorecard_files}.values())
+    disruptor_files = list({p.resolve(): p for p in disruptor_files}.values())
 
     if not aligned_files:
-        raise FileNotFoundError(
-            f"No 'aligned_telemetry_analysis*.csv' found in {base_dir.resolve()} or its parent directory."
-        )
+        raise FileNotFoundError(f"No 'aligned_telemetry_analysis*.csv' found.")
     if not scorecard_files:
-        raise FileNotFoundError(
-            f"No 'analysis_scorecard*.csv' found in {base_dir.resolve()} or its parent directory."
-        )
+        raise FileNotFoundError(f"No 'analysis_scorecard*.csv' found.")
 
-    # Pick the most recently modified aligned telemetry analysis file
-    latest_aligned = sorted(
-        aligned_files, key=lambda p: p.stat().st_mtime, reverse=True
-    )[0]
+    latest_aligned = sorted(aligned_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
     ts_tag = extract_timestamp_suffix(latest_aligned.name)
 
-    # Match corresponding scorecard with same timestamp tag if available
+    # Match scorecard and disruptor log with same timestamp tag if available
     matching_sc = [f for f in scorecard_files if ts_tag and ts_tag in f.name]
-    scorecard_path = (
-        matching_sc[0]
-        if matching_sc
-        else sorted(scorecard_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-    )
+    scorecard_path = matching_sc[0] if matching_sc else sorted(scorecard_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
 
-    return latest_aligned, scorecard_path, ts_tag
+    matching_dis = [f for f in disruptor_files if ts_tag and ts_tag in f.name]
+    disruptor_path = matching_dis[0] if matching_dis else (sorted(disruptor_files, key=lambda p: p.stat().st_mtime, reverse=True)[0] if disruptor_files else None)
 
-
+    return latest_aligned, scorecard_path, disruptor_path, ts_tag
+    
 # -------------------------------------------------------------------------
 # 2. DESIGN SYSTEM & COLOR IDENTITIES
 # -------------------------------------------------------------------------
@@ -391,22 +384,44 @@ if __name__ == '__main__':
     try:
         work_dir = Path(__file__).parent if "__file__" in locals() else Path.cwd()
 
-        aligned_path, scorecard_path, timestamp_str = find_analysis_files(work_dir)
+        aligned_path, scorecard_path, disruptor_path, timestamp_str = find_analysis_files(work_dir)
 
         print("==================================================")
         print(" PHASE 3: CHART GENERATION")
         print("==================================================")
         print(f" Aligned Telemetry File : {aligned_path.resolve()}")
         print(f" Performance Scorecard  : {scorecard_path.resolve()}")
+        if disruptor_path:
+            print(f" AP Disruptor Log File  : {disruptor_path.resolve()}")
 
         aligned_df = pd.read_csv(aligned_path)
         scorecard_df = pd.read_csv(scorecard_path)
 
+        # Parse Timestamps
+        aligned_df['Timestamp'] = pd.to_datetime(aligned_df['Timestamp'])
+        
+        # Merge AP Speed Disruptor Target if log exists
+        if disruptor_path and disruptor_path.exists():
+            disruptor_df = pd.read_csv(disruptor_path)
+            disruptor_df['Timestamp'] = pd.to_datetime(disruptor_df['Timestamp'])
+            
+            # Sort both DataFrames by timestamp before merge_asof
+            aligned_df = aligned_df.sort_values('Timestamp')
+            disruptor_df = disruptor_df.sort_values('Timestamp')
+            
+            # Stepwise backward fill AP Target Speed onto aligned telemetry timeline
+            aligned_df = pd.merge_asof(
+                aligned_df,
+                disruptor_df[['Timestamp', 'AP_Target_Speed_Kts']],
+                on='Timestamp',
+                direction='backward'
+            )
+
+        # Compute relative flight time in minutes
         aligned_df['Time_Min'] = (
-            pd.to_datetime(aligned_df['Timestamp']) - pd.to_datetime(aligned_df['Timestamp'].iloc[0])
+            aligned_df['Timestamp'] - aligned_df['Timestamp'].iloc[0]
         ).dt.total_seconds() / 60.0
 
-        # Output charts in parent folder where session CSVs reside
         output_dir = aligned_path.parent
 
         generate_flight_trajectory(aligned_df, timestamp_str, output_dir)
