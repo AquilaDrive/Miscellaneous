@@ -84,7 +84,7 @@ def generate_target(current_hdg, current_alt):
 
     hdg_speech = format_heading_speech(new_hdg)
 
-    if random.random() < 0.6:
+    if random.random() < 0.65:
         possible_alts = [
             a for a in range(12000, 22500, 500) if a != current_alt
         ]
