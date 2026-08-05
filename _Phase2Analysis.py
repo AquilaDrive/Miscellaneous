@@ -125,7 +125,14 @@ def normalize_telemetry_columns(df: pd.DataFrame) -> pd.DataFrame:
                 f"Available columns: {list(df.columns)}"
             )
 
-    return df.rename(columns=col_map)
+    df = df.rename(columns=col_map)
+
+    # Filter single-frame 0.0 telemetry dropouts when surrounding values are non-zero
+    is_dropout = (df["Heading"] == 0.0) & (df["Heading"].shift(1).abs() > 5.0)
+    df.loc[is_dropout, "Heading"] = np.nan
+    df["Heading"] = df["Heading"].ffill().bfill()
+
+    return df
 
 
 def normalize_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
