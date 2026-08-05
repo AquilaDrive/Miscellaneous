@@ -185,6 +185,7 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     plt.show()
     plt.close(fig)
     print(f"[Generated] {out_path.resolve()}")
+    
 # -------------------------------------------------------------------------
 # FIGURE 2: PILOT CONTROL INPUTS
 # -------------------------------------------------------------------------
@@ -193,19 +194,19 @@ def generate_pilot_controls(df, ts_str, output_dir: Path):
     apply_dark_style(fig, axes)
     fig.suptitle('PHASE 3: PILOT CONTROL INPUTS & WORKLOAD DYNAMICS', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
 
-    # Aileron (Roll Pct - Matches Bank color)
-    axes[0].plot(df['Time_Min'], df['Yoke_Roll_Pct'], color=COLORS['Roll'], linewidth=1.0)
-    axes[0].set_ylabel('Yoke Roll (%)', fontweight='bold')
-    axes[0].set_title('Aileron Control Input (Yoke Roll %)', loc='left', color='#888888', fontsize=11)
+    # 1. Elevator (Pitch Pct - Vertical Motion, Matches VSI color)
+    axes[0].plot(df['Time_Min'], df['Yoke_Pitch_Pct'], color=COLORS['Pitch'], linewidth=1.0)
+    axes[0].set_ylabel('Yoke Pitch (%)', fontweight='bold')
+    axes[0].set_title('Elevator Control Input (Yoke Pitch %)', loc='left', color='#888888', fontsize=11)
     axes[0].axhline(0, color='#444444', linestyle=':', linewidth=1)
 
-    # Elevator (Pitch Pct - Matches VSI color)
-    axes[1].plot(df['Time_Min'], df['Yoke_Pitch_Pct'], color=COLORS['Pitch'], linewidth=1.0)
-    axes[1].set_ylabel('Yoke Pitch (%)', fontweight='bold')
-    axes[1].set_title('Elevator Control Input (Yoke Pitch %)', loc='left', color='#888888', fontsize=11)
+    # 2. Aileron (Roll Pct - Lateral Motion, Matches Bank color)
+    axes[1].plot(df['Time_Min'], df['Yoke_Roll_Pct'], color=COLORS['Roll'], linewidth=1.0)
+    axes[1].set_ylabel('Yoke Roll (%)', fontweight='bold')
+    axes[1].set_title('Aileron Control Input (Yoke Roll %)', loc='left', color='#888888', fontsize=11)
     axes[1].axhline(0, color='#444444', linestyle=':', linewidth=1)
 
-    # Rudder (Yaw Pct - Unique Green)
+    # 3. Rudder (Yaw Pct - Direct Directional Steering)
     axes[2].plot(df['Time_Min'], df['Rudder_Pct'], color=COLORS['Rudder'], linewidth=1.0)
     axes[2].set_ylabel('Rudder (%)', fontweight='bold')
     axes[2].set_xlabel('Flight Time (Minutes)', fontweight='bold', fontsize=12)
@@ -220,7 +221,6 @@ def generate_pilot_controls(df, ts_str, output_dir: Path):
     plt.show()
     plt.close(fig)
     print(f"[Generated] {out_path.resolve()}")
-
 
 # -------------------------------------------------------------------------
 # FIGURE 3: UNIFIED SCORECARD (SEGMENTS + ERRORS + LARGE FONT KPI EVALS)
