@@ -60,17 +60,17 @@ def find_analysis_files(base_dir: Path):
 # 2. DESIGN SYSTEM & COLOR IDENTITIES
 # -------------------------------------------------------------------------
 COLORS = {
-    'Altitude': '#00ffcc',   # Bright Cyan
+    'Altitude': '#00ffcc',   # Cyan / Blue-Green
     'Heading':  '#ffb700',   # Amber
     'Bank':     '#ff007f',   # Magenta / Pink
     'Roll':     '#ff007f',   # Magenta (matches Bank)
-    'VSI':      '#3399ff',   # Blue
-    'Pitch':    '#3399ff',   # Blue (matches Elevator/VSI)
-    'Rudder':   '#00e676',   # Green (unique to Yaw)
-    'IAS':      '#ff6600',   # Vibrant Orange (dedicated Speed identity)
-    'Ref':      '#e0e0e0',   # Dashed Light Grey for target trajectory
-    'Pass':     '#00ff66',   # Bright Green badge
-    'Fail':     '#ff3333'    # Bright Red badge
+    'VSI':      '#3399ff',   # Azure Light Blue
+    'Pitch':    '#3399ff',   # Blue (matches VSI)
+    'Rudder':   '#00e676',   # Green
+    'IAS':      '#7f33ff',   # Deep Electric Indigo (Altitude -> VSI -> Speed Gradient)
+    'Ref':      '#888888',   # Toned-down Subdued Slate Gray
+    'Pass':     '#00ff66',   # Bright Green
+    'Fail':     '#ff3333'    # Bright Red
 }
 
 def apply_dark_style(fig, axes):
