@@ -145,9 +145,6 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     if ref_ias_col:
         axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
 
-    axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
-    if ref_ias_col:
-        axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     axes[2].set_ylabel('IAS (kts)', fontweight='bold')
     axes[2].set_title('Airspeed Tracking Profile & AP Target Speed', loc='left', color='#888888', fontsize=11)
     axes[2].legend(**leg_args)
