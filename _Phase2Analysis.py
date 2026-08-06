@@ -179,75 +179,6 @@ class FlightPerformanceAnalyzer:
             "VSI": 500.0,  # fpm
         }
 
-    @staticmethod
-    def compute_prr(pitch_inputs, dt: float) -> float:
-        pitch_inputs = np.asarray(pitch_inputs, dtype=float)
-        pitch_inputs = pitch_inputs[~np.isnan(pitch_inputs)]
-        if len(pitch_inputs) == 0:
-            return 0.0
-        
-        threshold = 0.02
-        reversals = 0
-        last_extremum = pitch_inputs[0]
-        direction = 0
-
-        for input_val in pitch_inputs[1:]:
-            diff = input_val - last_extremum
-            
-            if direction >= 0 and diff < -threshold:
-                reversals += 1
-                direction = -1
-                last_extremum = input_val
-            elif direction <= 0 and diff > threshold:
-                reversals += 1
-                direction = 1
-                last_extremum = input_val
-            elif (direction == 1 and input_val > last_extremum) or (direction == -1 and input_val < last_extremum):
-                last_extremum = input_val
-
-        flight_time_min = (len(pitch_inputs) * dt) / 60.0
-        return round(reversals / flight_time_min, 2) if flight_time_min > 0 else 0.0
-
-    def classify_flight_regimes(self, df: pd.DataFrame, dt: float) -> pd.DataFrame:
-        n = len(df)
-        if n == 0:
-            df["Regime"] = []
-            return df
-
-        speed_step = (
-            df["AP_Target_Speed_Kts"].diff().abs() > 0.5
-            if "AP_Target_Speed_Kts" in df.columns
-            else pd.Series(False, index=df.index)
-        )
-        atc_switch = df["Segment_ID"].diff().abs() > 0
-        ref_moving = (df["Ref_VSI"].abs() > 50.0) | (df["Ref_Bank"].abs() > 1.0)
-        
-        disruption_active = speed_step | atc_switch | ref_moving
-        
-        in_fine_envelope = (
-            (df["Alt_Err"].abs() <= self.TOLERANCE_FINE["Alt"]) &
-            (df["Hdg_Err"].abs() <= self.TOLERANCE_FINE["Hdg"]) &
-            (df["Bank_Err"].abs() <= self.TOLERANCE_FINE["Bank"]) &
-            (~ref_moving)
-        )
-        
-        window_samples = max(int(np.round(3.0 / dt)), 1)
-        sustained_convergence = (
-            in_fine_envelope.rolling(window=window_samples, min_periods=window_samples).min() == 1.0
-        )
-        
-        regimes = ["TRANSITION"] * n
-        current_state = "TRANSITION"
-        for i in range(n):
-            if disruption_active.iloc[i]:
-                current_state = "TRANSITION"
-            elif sustained_convergence.iloc[i]:
-                current_state = "STEADY_STATE"
-            regimes[i] = current_state
-            
-        df["Regime"] = regimes
-        return df
-
     def process_and_align(
         self, telem_df: pd.DataFrame, ref_df: pd.DataFrame, atc_df: pd.DataFrame
     ) -> pd.DataFrame:
@@ -339,7 +270,6 @@ class FlightPerformanceAnalyzer:
             )
             merged.loc[mask, "Segment_ID"] = idx + 1
 
-        merged = self.classify_flight_regimes(merged, dt)
         return merged
 
     def compute_metrics(self, df: pd.DataFrame, label="Overall Flight"):
@@ -381,26 +311,6 @@ class FlightPerformanceAnalyzer:
         )
         if dt <= 0:
             dt = 1.0
-
-        seg_steady = df[df["Regime"] == "STEADY_STATE"] if "Regime" in df.columns else pd.DataFrame()
-        seg_trans = df[df["Regime"] == "TRANSITION"] if "Regime" in df.columns else pd.DataFrame()
-
-        settling_time_sec = round(len(seg_trans) * dt, 1)
-        steady_time_pct = round((len(seg_steady) / n) * 100.0, 1) if n > 0 else 0.0
-
-        rmse_steady_alt = (
-            round(float(np.sqrt(np.mean(seg_steady["Alt_Err"] ** 2))), 2)
-            if len(seg_steady) > 0
-            else 0.0
-        )
-
-        pitch_col = next((col for col in ["Yoke_Pitch_Pct", "Elevator_Pct", "Pitch_Pct"] if col in df.columns), None)
-        if pitch_col:
-            prr_trans = self.compute_prr(seg_trans[pitch_col].values, dt) if len(seg_trans) > 0 else 0.0
-            prr_steady = self.compute_prr(seg_steady[pitch_col].values, dt) if len(seg_steady) > 0 else 0.0
-        else:
-            prr_trans = 0.0
-            prr_steady = 0.0
 
         # Oscillation Reversal Counts with Deadband Filter and 360-deg wrapping protection
         DEADBAND = 0.2  # deg/s threshold to ignore sensor jitter
@@ -473,15 +383,10 @@ class FlightPerformanceAnalyzer:
         return {
             "Phase_Segment": label,
             "Duration_Sec": round(df["Timestamp"].diff().dt.total_seconds().clip(upper=1.0).sum(), 1),
-            "Settling_Time_Sec": settling_time_sec,
-            "Steady_Time_Pct": steady_time_pct,
             "RMSE_Hdg_Deg": round(rmse_hdg, 2),
             "RMSE_Bank_Deg": round(rmse_bank, 2),
             "RMSE_Alt_Ft": round(rmse_alt, 2),
-            "RMSE_Steady_Alt": rmse_steady_alt,
             "RMSE_VSI_FPM": round(rmse_vsi, 2),
-            "PRR_Transition": prr_trans,
-            "PRR_Steady": prr_steady,
             "Hdg_In_Fine_Pct": round(fine_hdg_pct, 1),
             "Alt_In_Fine_Pct": round(fine_alt_pct, 1),
             "Bank_In_Fine_Pct": round(fine_bank_pct, 1),
@@ -543,13 +448,11 @@ if __name__ == "__main__":
                 [
                     "Phase_Segment",
                     "Duration_Sec",
-                    "Settling_Time_Sec",
-                    "Steady_Time_Pct",
                     "RMSE_Hdg_Deg",
                     "RMSE_Alt_Ft",
-                    "RMSE_Steady_Alt",
-                    "PRR_Transition",
-                    "PRR_Steady",
+                    "Hdg_In_Fine_Pct",
+                    "Alt_In_Fine_Pct",
+                    "Hdg_Oscillations",
                     "Spikes",
                     "Ripple_Time",
                 ]
@@ -593,3 +496,4 @@ if __name__ == "__main__":
     finally:
         print("\n" + "=" * 50)
         input("Press Enter to exit...")
+        
