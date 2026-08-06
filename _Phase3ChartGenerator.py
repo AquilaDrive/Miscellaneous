@@ -88,27 +88,6 @@ def apply_dark_style(fig, axes):
             spine.set_color('#2a2a2a')
         ax.grid(True, color='#181818', linestyle='--', alpha=0.8)
 
-def add_regime_shading(ax, df):
-    """Overlays subtle background shading across TRANSITION intervals."""
-    if 'Regime' not in df.columns or 'Time_Min' not in df.columns:
-        return
-    
-    trans_mask = df['Regime'] == 'TRANSITION'
-    if not trans_mask.any():
-        return
-
-    trans_diff = np.diff(trans_mask.astype(int))
-    starts = df['Time_Min'].iloc[np.where(trans_diff == 1)[0] + 1].tolist()
-    ends = df['Time_Min'].iloc[np.where(trans_diff == -1)[0] + 1].tolist()
-
-    if trans_mask.iloc[0]:
-        starts.insert(0, df['Time_Min'].iloc[0])
-    if trans_mask.iloc[-1]:
-        ends.append(df['Time_Min'].iloc[-1])
-
-    for start, end in zip(starts, ends):
-        ax.axvspan(start, end, color='#ff3333', alpha=0.08, zorder=0)
-
 
 # -------------------------------------------------------------------------
 # FIGURE 1: FLIGHT TRAJECTORY TRACKING
@@ -139,9 +118,6 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
         labelcolor='#ffffff',
         fontsize=9.5
     )
-
-    for ax in axes:
-        add_regime_shading(ax, df)
 
     # 1. Altitude (P1 - Primary Focus)
     axes[0].plot(df['Time_Min'], df['Altitude'], label='Actual Altitude (ft)', color=COLORS['Altitude'], linewidth=1.5)
@@ -231,9 +207,6 @@ def generate_pilot_controls(df, ts_str, output_dir: Path):
     apply_dark_style(fig, axes)
     fig.suptitle('PHASE 3: PILOT CONTROL INPUTS & WORKLOAD DYNAMICS', fontsize=16, fontweight='bold', color='#ffffff', y=0.97)
 
-    for ax in axes:
-        add_regime_shading(ax, df)
-
     # 1. Elevator (Pitch Pct - Vertical Motion, Matches VSI color)
     axes[0].plot(df['Time_Min'], df['Yoke_Pitch_Pct'], color=COLORS['Pitch'], linewidth=1.0)
     axes[0].set_ylabel('Yoke Pitch (%)', fontweight='bold')
@@ -321,10 +294,6 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
         pct_above_20 = 0.0
         reversals_per_minute = 0.0
 
-    # Safe Extraction of Regime Metrics for Workload Display
-    prr_steady_val = float(overall_row['PRR_Steady'].values[0]) if ('PRR_Steady' in overall_row and not overall_row.empty and pd.notna(overall_row['PRR_Steady'].values[0])) else reversals_per_minute
-    prr_trans_val = float(overall_row['PRR_Transition'].values[0]) if ('PRR_Transition' in overall_row and not overall_row.empty and pd.notna(overall_row['PRR_Transition'].values[0])) else None
-
     # Overall Session Envelope ToL (Average across dimensions)
     sess_tol_env = np.mean([sess_tol_alt, sess_tol_hdg, sess_tol_bnk])
     
@@ -335,7 +304,7 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     env_pass    = sess_tol_env > 85.0
     spikes_pass = spikes_val <= 2
     ripple_pass = ripple_val < 3.0
-    workload_pass = prr_steady_val <= 8.0
+    workload_pass = reversals_per_minute <= 8.0
 
     # 3x3 Grid Layout Setup
     fig = plt.figure(figsize=(18, 13))
@@ -437,11 +406,7 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     ax_kpi_req.text(0.05, 0.12, ripple_str, color=rip_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # Dedicated Line 3: Pitch Workload (Reversals per Minute)
-    if prr_trans_val is not None:
-        work_str = f"PRR [< 8.0]: {prr_steady_val:.1f} std | {prr_trans_val:.1f} trn  [{work_status}]"
-    else:
-        work_str = f"Pitch Workload [< 8.0]: {prr_steady_val:.1f} rev/m  [{work_status}]"
-    ax_kpi_req.text(0.05, 0.04, work_str, color=work_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
+    ax_kpi_req.text(0.05, 0.04, f"Pitch Workload [< 8.0]: {reversals_per_minute:.1f} rev/m  [{work_status}]", color=work_color, fontsize=9.5, fontweight='bold', transform=ax_kpi_req.transAxes)
 
     # 5. Error Density Histograms (Bottom Row)
     sns.histplot(aln_df['Alt_Err'], kde=True, ax=ax_err_alt, color=COLORS['Altitude'], bins=35, edgecolor='#000000', alpha=0.7)
@@ -491,14 +456,6 @@ if __name__ == '__main__':
 
         aligned_df = pd.read_csv(aligned_path)
         scorecard_df = pd.read_csv(scorecard_path)
-
-        # Backward compatibility guards for legacy Phase 2 CSVs
-        if 'Regime' not in aligned_df.columns:
-            aligned_df['Regime'] = 'STEADY_STATE'
-
-        for col in ['Settling_Time_Sec', 'Steady_Time_Pct', 'RMSE_Steady_Alt', 'PRR_Transition', 'PRR_Steady']:
-            if col not in scorecard_df.columns:
-                scorecard_df[col] = np.nan
 
         # Parse Timestamps
         aligned_df['Timestamp'] = pd.to_datetime(aligned_df['Timestamp'])
