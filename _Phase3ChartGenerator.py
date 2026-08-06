@@ -137,12 +137,13 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     ias_col = next((col for col in ['IAS', 'Indicated_Airspeed_Kts'] if col in df.columns), None)
     ref_ias_col = next((col for col in ['Ref_IAS', 'Ref_Speed', 'AP_Target_Speed_Kts', 'AP_Target_Speed'] if col in df.columns), None)
 
-    # Verify column exists AND contains non-zero telemetry readings
+    # Verify columns exist AND contain valid telemetry readings
     has_valid_ias = ias_col is not None and (df[ias_col].dropna() != 0).any()
+    has_valid_ref_ias = ref_ias_col is not None and not df[ref_ias_col].dropna().empty
 
     if has_valid_ias:
         axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
-        if ref_ias_col:
+        if has_valid_ref_ias:
             axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     else:
         axes[2].text(0.5, 0.5, 'No IAS Data Available in Log', ha='center', va='center', transform=axes[2].transAxes, color='#888888')
@@ -434,8 +435,7 @@ if __name__ == '__main__':
         # Parse Timestamps
         aligned_df['Timestamp'] = pd.to_datetime(aligned_df['Timestamp'])
 
-        default_ias_target = 300.0
-        # Merge AP Speed Disruptor Target if log exists
+        # Merge AP Speed Disruptor Target only if log exists
         if disruptor_path and disruptor_path.exists():
             disruptor_df = pd.read_csv(disruptor_path)
             disruptor_df['Timestamp'] = pd.to_datetime(disruptor_df['Timestamp'])
@@ -451,11 +451,6 @@ if __name__ == '__main__':
                 on='Timestamp',
                 direction='backward'
             )
-            # Fill records prior to the first log timestamp with Phase 1 default speed
-            aligned_df['AP_Target_Speed_Kts'] = aligned_df['AP_Target_Speed_Kts'].fillna(default_ias_target)
-        else:
-            # Fallback for full duration if disruptor log is missing
-            aligned_df['AP_Target_Speed_Kts'] = default_ias_target
 
         # Compute relative flight time in minutes
         aligned_df['Time_Min'] = (
