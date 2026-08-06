@@ -268,8 +268,15 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     if len(pitch_inputs) > 0:
         above_20 = np.sum(np.abs(pitch_inputs) > 0.2)
         pct_above_20 = (above_20 / len(pitch_inputs)) * 100.0
-        zero_crossings = np.where(np.diff(np.sign(pitch_inputs)))[0]
-        reversals_per_minute = len(zero_crossings) / ((aln_df['Timestamp'].iloc[-1] - aln_df['Timestamp'].iloc[0]).total_seconds() / 60.0)
+        # Deadband filter to strip out neutral rest positions and potentiometer noise
+        active_inputs = pitch_inputs[np.abs(pitch_inputs) > 0.01]
+        if len(active_inputs) > 1:
+            # Count strictly direct polarity inversions (+ to - or - to +)
+            true_reversals = np.where(np.diff(np.sign(active_inputs)) != 0)[0]
+            flight_time_min = (aln_df['Timestamp'].iloc[-1] - aln_df['Timestamp'].iloc[0]).total_seconds() / 60.0
+            reversals_per_minute = len(true_reversals) / flight_time_min
+        else:
+            reversals_per_minute = 0.0
     else:
         pct_above_20 = 0.0
         reversals_per_minute = 0.0
