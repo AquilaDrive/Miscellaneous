@@ -134,8 +134,17 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     axes[1].legend(**leg_args)
 
     # 3. Indicated Airspeed (IAS)
-    ias_col = 'IAS' if 'IAS' in df.columns else 'Indicated_Airspeed_Kts'
+    ias_col = next((col for col in ['IAS', 'Indicated_Airspeed_Kts'] if col in df.columns), None)
     ref_ias_col = next((col for col in ['Ref_IAS', 'Ref_Speed', 'AP_Target_Speed_Kts', 'AP_Target_Speed'] if col in df.columns), None)
+    
+    if ias_col:
+        axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
+    else:
+        # Prevents an empty, confusing graph by displaying a placeholder text
+        axes[2].text(0.5, 0.5, 'No IAS Data Available', ha='center', va='center', transform=axes[2].transAxes, color='#888888')
+
+    if ref_ias_col:
+        axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
 
     axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
     if ref_ias_col:
