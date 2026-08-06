@@ -268,15 +268,28 @@ def generate_scorecard_dashboard(aln_df, sc_df, ts_str, output_dir: Path):
     if len(pitch_inputs) > 0:
         above_20 = np.sum(np.abs(pitch_inputs) > 0.2)
         pct_above_20 = (above_20 / len(pitch_inputs)) * 100.0
-        # Deadband filter to strip out neutral rest positions and potentiometer noise
-        active_inputs = pitch_inputs[np.abs(pitch_inputs) > 0.01]
-        if len(active_inputs) > 1:
-            # Count strictly direct polarity inversions (+ to - or - to +)
-            true_reversals = np.where(np.diff(np.sign(active_inputs)) != 0)[0]
-            flight_time_min = (aln_df['Timestamp'].iloc[-1] - aln_df['Timestamp'].iloc[0]).total_seconds() / 60.0
-            reversals_per_minute = len(true_reversals) / flight_time_min
-        else:
-            reversals_per_minute = 0.0
+        # Calculate Pitch Reversal Rate (PRR) using Peak-to-Valley magnitude changes
+        threshold = 0.02  # 2% yoke displacement threshold to ignore micro-jitter
+        reversals = 0
+        last_extremum = pitch_inputs[0]
+        direction = 0  # +1 for moving up (pulling), -1 for moving down (pushing)
+        for input_val in pitch_inputs[1:]:
+            diff = input_val - last_extremum
+            if direction >= 0 and diff < -threshold:
+                # Switched from Pulling to Pushing beyond threshold magnitude
+                reversals += 1
+                direction = -1
+                last_extremum = input_val
+            elif direction <= 0 and diff > threshold:
+                # Switched from Pushing to Pulling beyond threshold magnitude
+                reversals += 1
+                direction = 1
+                last_extremum = input_val
+            elif (direction == 1 and input_val > last_extremum) or (direction == -1 and input_val < last_extremum):
+                # Continuing trend, update peak/valley peak reference
+                last_extremum = input_val
+        flight_time_min = (aln_df['Timestamp'].iloc[-1] - aln_df['Timestamp'].iloc[0]).total_seconds() / 60.0
+        reversals_per_minute = reversals / flight_time_min if flight_time_min > 0 else 0.0
     else:
         pct_above_20 = 0.0
         reversals_per_minute = 0.0
