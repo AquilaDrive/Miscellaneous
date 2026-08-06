@@ -139,11 +139,11 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
 
     if ias_col:
         axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
+        # Only plot the AP target line if actual IAS data is also present
+        if ref_ias_col:
+            axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     else:
         axes[2].text(0.5, 0.5, 'No IAS Data Available in Log', ha='center', va='center', transform=axes[2].transAxes, color='#888888')
-
-    if ref_ias_col:
-        axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
 
     axes[2].set_ylabel('IAS (kts)', fontweight='bold')
     axes[2].set_title('Airspeed Tracking Profile & AP Target Speed', loc='left', color='#888888', fontsize=11)
