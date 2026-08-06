@@ -137,9 +137,11 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
     ias_col = next((col for col in ['IAS', 'Indicated_Airspeed_Kts'] if col in df.columns), None)
     ref_ias_col = next((col for col in ['Ref_IAS', 'Ref_Speed', 'AP_Target_Speed_Kts', 'AP_Target_Speed'] if col in df.columns), None)
 
-    if ias_col:
+    # Verify column exists AND contains non-zero telemetry readings
+    has_valid_ias = ias_col is not None and (df[ias_col].dropna() != 0).any()
+
+    if has_valid_ias:
         axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
-        # Only plot the AP target line if actual IAS data is also present
         if ref_ias_col:
             axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     else:
