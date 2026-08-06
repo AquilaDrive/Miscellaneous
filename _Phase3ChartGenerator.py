@@ -135,15 +135,21 @@ def generate_flight_trajectory(df, ts_str, output_dir: Path):
 
     # 3. Indicated Airspeed (IAS)
     ias_col = next((col for col in ['IAS', 'Indicated_Airspeed_Kts'] if col in df.columns), None)
-    # Check for valid IAS telemetry (> 0)
+    ref_ias_col = next((col for col in ['AP_Target_Speed_Kts', 'Ref_IAS', 'Ref_Speed', 'AP_Target_Speed'] if col in df.columns), None)
+    # Check for valid actual IAS telemetry (> 0)
     has_valid_ias = ias_col is not None and (df[ias_col].dropna() != 0).any()
-    # Only plot AP Target Speed if the disruptor log merged 'AP_Target_Speed_Kts' onto the dataframe
-    has_target_log = 'AP_Target_Speed_Kts' in df.columns and not df['AP_Target_Speed_Kts'].dropna().empty
+    # Screen target speed: must exist, not be empty, and not be stuck entirely at 0 or 100
+    has_valid_target = (
+        ref_ias_col is not None 
+        and not df[ref_ias_col].dropna().empty 
+        and (df[ref_ias_col].dropna() != 0).any()
+        and (df[ref_ias_col].dropna() != 100).any()
+    )
 
     if has_valid_ias:
         axes[2].plot(df['Time_Min'], df[ias_col], label='Actual IAS (kts)', color=COLORS['IAS'], linewidth=1.5)
-        if has_target_log:
-            axes[2].plot(df['Time_Min'], df['AP_Target_Speed_Kts'], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
+        if has_valid_target:
+            axes[2].plot(df['Time_Min'], df[ref_ias_col], label='AP Target Speed (kts)', color=COLORS['Ref'], linewidth=1.2, linestyle='--')
     else:
         axes[2].text(0.5, 0.5, 'No IAS Data Available in Log', ha='center', va='center', transform=axes[2].transAxes, color='#888888')
 
